@@ -1,0 +1,29 @@
+# Core dependencies for Tata Chemicals V2V Agent
+# Python >= 3.11.14 required
+
+# Database
+alembic
+asyncpg
+sqlalchemy
+
+# Web framework
+fastapi
+uvicorn
+python-multipart
+
+# LiveKit
+livekit>=1.0
+livekit-agents[aws,cartesia,deepgram,openai,sarvam,silero,turn-detector]~=1.3
+
+# Task queue
+celery
+redis
+
+# Utilities
+beautifulsoup4
+greenlet>=3.3.0
+pydantic-settings
+pwdlib[argon2]
+pyjwt
+python-dotenv~=1.0
+requests
