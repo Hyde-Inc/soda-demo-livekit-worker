@@ -1,0 +1,11 @@
+room:
+  enabled_codecs:
+    - mime: audio/opus
+    - mime: audio/PCMU
+    - mime: audio/PCMA
+    - mime: video/VP8
+    - mime: video/H264
+    - mime: video/VP9
+    - mime: video/AV1
+    - mime: video/H265
+    - mime: video/rtx

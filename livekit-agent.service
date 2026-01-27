@@ -1,0 +1,23 @@
+[Unit]
+Description=LiveKit Agent Worker Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/home/ubuntu/tata-chemicals-livekit-worker
+ExecStart=/bin/bash -c 'cd /home/ubuntu/tata-chemicals-livekit-worker && ./deploy.sh start'
+ExecStop=/bin/bash -c 'cd /home/ubuntu/tata-chemicals-livekit-worker && ./deploy.sh stop'
+ExecReload=/bin/bash -c 'cd /home/ubuntu/tata-chemicals-livekit-worker && ./deploy.sh restart'
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

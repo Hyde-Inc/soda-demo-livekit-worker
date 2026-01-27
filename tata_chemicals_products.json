@@ -1,0 +1,926 @@
+{
+  "model": "Sierra",
+  "body_style": "Lifestyle SUV Concept",
+  "price_range_ex_showroom": "₹11.49 Lakh – ₹21.29 Lakh",
+  "price_range_on_road_mumbai": "₹13.66 Lakh – ₹25.81 Lakh",
+  "summary": [
+    "Red Dot Award 2025 winner for bold, ground-breaking design",
+    "ATLAS architecture derived from Land Rover D8 platform",
+    "HYPAR HUD (first homegrown ICE vehicle with AR display), Horizon View triple-screen cockpit and Theatre Pro in-cabin experience",
+    "Level 2+ ADAS suite with 22 functions including Intelligent Speed Assist, Adaptive Steering Assist and Blind Spot View Monitor",
+    "Up to 62.2 Litre equivalent boot (VDA) with sliding boss mode, winged comfort headrests and ventilated seats"
+  ],
+  "variants": [
+    {
+      "name": "Concept Persona",
+      "powertrains": [
+        {
+          "engine": "1.5L Hyperion Turbo GDI Petrol",
+          "transmission": "6MT / 7DCA",
+          "drive_modes": ["Eco", "City", "Sport"]
+        },
+        {
+          "engine": "1.5L Kryojet Turbo Diesel",
+          "transmission": "6MT / 6AT",
+          "drive_modes": ["Economy", "Wet", "Rough"]
+        }
+      ],
+      "key_features": [
+        "PanoramaX voice-controlled sunroof with mood lighting",
+        "Horizon View triple-screen infotainment with 31.2 cm passenger display",
+        "12-speaker JBL Black system with Dolby Atmos and SonicShaft soundbar",
+        "Superglide suspension with Frequency Dependent Damping",
+        "6-way powered driver seat with memory, thigh support extender and rear boss mode"
+      ],
+      "safety": [
+        "4-wheel disc brakes, electronic parking brake with auto hold",
+        "SOS (E-Call/B-Call), iRA connected suite with 75 functions",
+        "HypAR HUD projected alerts, 360° SVS with Blind Spot View Monitor",
+        "Level 2+ ADAS with AEB (Pedestrian/Vehicle/Cyclist), LKA/LCS, ISA and Door Open Alert"
+      ],
+      "technology": [
+        "Mappls integrated navigation with digital cockpit projection",
+        "Arcade Suite (28+ OTT/gaming apps)",
+        "Alexa Connected Car (home-to-car/car-to-home)",
+        "Wireless Android Auto/Apple CarPlay with dual device support",
+        "65W Type-C fast charging (front & rear) with media passthrough"
+      ]
+    }
+  ]
+},
+{
+  "model": "Harrier",
+  "body_style": "5-seat SUV",
+  "price_range_ex_showroom": "₹14.00 Lakh – ₹25.25 Lakh",
+  "price_range_on_road_mumbai": "₹16.72 Lakh – ₹30.13 Lakh",
+  "summary": [
+    "OMEGARC platform derived from Land Rover D8",
+    "Segment-first 36.9 cm Samsung Neo QLED infotainment with Dolby Atmos",
+    "Level 2+ ADAS (22 functions) and VisionEX E-IRVM with dual dash cam",
+    "Available Hyperion 1.5L Turbo GDI petrol (170 PS/280 Nm) and Kryotec 2.0L diesel (170 PS/350 Nm)",
+    "R19 staggered alloys, parametric grille and theatre-inspired interior lighting"
+  ],
+  "variants": [
+    {
+      "name": "Smart",
+      "powertrains": [
+        {
+          "engine": "1.5L Hyperion Turbo GDI Petrol",
+          "transmission": "6MT / 7DCA",
+          "drive_modes": ["Eco", "City", "Sport"]
+        },
+        {
+          "engine": "2.0L Kryotec Turbo Diesel",
+          "transmission": "6MT / 6AT",
+          "drive_modes": ["Eco", "City", "Sport"]
+        }
+      ],
+      "key_features": [
+        "Bi-LED projector headlamps with signature DRLs",
+        "17.78 cm digital cockpit & 17.78 cm Harman infotainment",
+        "6 airbags (front, side, curtain)",
+        "All-wheel disc brakes with advanced ESP suite (20 functions)",
+        "60:40 split reclining rear seats, panoramic sunroof prep"
+      ],
+      "safety": [
+        "ADAS-ready architecture, hill-hold assist, TPMS",
+        "360° HD surround view with blind view monitor (camera ready)",
+        "ISOFIX anchors, perimetric alarm and tyre puncture kit",
+        "Emergency Call & Breakdown Call integration"
+      ],
+      "technology": [
+        "Connected vehicle pre-wiring for iRA 2.0",
+        "Wireless charger ready console, dual USB A & C",
+        "Mappls navigation capable cluster",
+        "Voice commands (HVAC, windows, sunroof-ready)"
+      ]
+    },
+    {
+      "name": "Pure X",
+      "adds_over": "Smart",
+      "key_features": [
+        "Voice-assisted panoramic sunroof",
+        "360° HD surround view system",
+        "UltraView 26.03 cm HD infotainment & digital cockpit",
+        "Cruise control, auto headlamps & rain sensing wipers",
+        "Leatherette-wrapped steering & gear knob"
+      ]
+    },
+    {
+      "name": "Adventure X",
+      "adds_over": "Pure X",
+      "key_features": [
+        "Terrain Response Modes (Normal/Wet/Rough)",
+        "Trail Hold EPB with Auto Hold",
+        "Trail Sense auto headlamps and Aqua sensing wipers",
+        "Front parking sensors, panoramic sunroof mood lighting",
+        "6 speakers + 2 tweeters with Harman AudioworX"
+      ]
+    },
+    {
+      "name": "Adventure X+",
+      "adds_over": "Adventure X",
+      "key_features": [
+        "ADAS Level 2 (Adaptive Cruise Control, AEB, LKA, TSR, HBA)",
+        "Ergo Lux 6-way powered driver seat with memory",
+        "Ventilated front row seats",
+        "10 JBL speakers with subwoofer and sound modes",
+        "Wireless charger, Tyre Pressure Monitoring System"
+      ]
+    },
+    {
+      "name": "Accomplished X",
+      "adds_over": "Adventure X+",
+      "key_features": [
+        "31.24 cm UltraView HD infotainment",
+        "Winged comfort headrests, 2nd row blinds",
+        "Bejewelled terrain dial with display",
+        "Air purifier with AQI display",
+        "Mood lighting on dashboard and door pads"
+      ]
+    },
+    {
+      "name": "Accomplished X+",
+      "adds_over": "Accomplished X",
+      "key_features": [
+        "Gesture-controlled powered tailgate",
+        "4-way powered co-driver seat with boss mode",
+        "Ventilated 2nd row captain seats (6-seater)",
+        "ADAS Level 2+ with ISA (AT)",
+        "12 JBL speaker set with Harman AudioworX Advanced"
+      ]
+    },
+    {
+      "name": "Accomplished X+ Stealth Edition",
+      "adds_over": "Accomplished X+",
+      "key_features": [
+        "Matte Stealth Black exterior with bespoke mascot",
+        "Stealth black R19 alloy wheels",
+        "Carbon Noir interior theme"
+      ]
+    },
+    {
+      "name": "Accomplished Ultra",
+      "powertrains": [
+        {
+          "engine": "1.5L Hyperion Turbo GDI Petrol",
+          "transmission": "7DCA",
+          "drive_modes": ["Eco", "City", "Sport"]
+        }
+      ],
+      "key_features": [
+        "36.9 cm Samsung Neo QLED infotainment display",
+        "Dolby Atmos tuned cabin with 12 JBL speakers",
+        "VisionEX E-IRVM with in-built dual dash cam/DVR",
+        "Oyster White & Gold cabin with illuminated accents",
+        "ADAS Level 2+ with 22 functions (ISA, BSM, OSA)"
+      ],
+      "safety": [
+        "Level 2+ ADAS with ISA (map & TSR based)",
+        "Blind Spot View Monitor, RCW & DOA",
+        "360° SVS with adaptive guidelines",
+        "Electronic parking brake with auto hold, hill descent control"
+      ],
+      "technology": [
+        "Alexa home-to-car integration",
+        "Arcade app suite, iRA 2.0 connected tech (1 year inclusive)",
+        "Mappls navigation mirrored to digital cockpit",
+        "Wireless Android Auto/Apple CarPlay, dual 65W USB-C"
+      ]
+    },
+    {
+      "name": "Accomplished Ultra Red #DARK",
+      "adds_over": "Accomplished Ultra",
+      "key_features": [
+        "Exclusive Carnelian Red interior theme",
+        "Blackstone R19 alloys with red calipers",
+        "Red #DARK badging and accent stitching"
+      ]
+    }
+  ]
+},
+{
+  "model": "Safari",
+  "body_style": "6/7-seat SUV",
+  "price_range_ex_showroom": "₹14.66 Lakh – ₹25.96 Lakh",
+  "price_range_on_road_mumbai": "₹17.50 Lakh – ₹30.97 Lakh",
+  "summary": [
+    "Bharat NCAP & Global NCAP 5-star rated (diesel)",
+    "OMEGARC chassis with 205 mm ground clearance",
+    "Hyperion 1.5L Turbo GDI petrol (170 PS/280 Nm) & Kryotec 2.0L diesel (170 PS/350 Nm)",
+    "Level 2+ ADAS, VisionEX E-IRVM and 360° surround with blind view",
+    "Winged comfort headrests, dual-zone climate, 2nd-row ventilation (select trims)"
+  ],
+  "variants": [
+    {
+      "name": "Smart",
+      "powertrains": [
+        {
+          "engine": "1.5L Hyperion Turbo GDI Petrol",
+          "transmission": "6MT / 7DCA",
+          "drive_modes": ["Eco", "City", "Sport"]
+        },
+        {
+          "engine": "2.0L Kryotec Turbo Diesel",
+          "transmission": "6MT / 6AT",
+          "drive_modes": ["Eco", "City", "Sport"]
+        }
+      ],
+      "key_features": [
+        "Bi-LED projector headlamps with sequential DRLs",
+        "17.78 cm digital cockpit & 17.78 cm Harman infotainment",
+        "6 airbags, all-disc brakes, ESP with 20 sub-functions",
+        "60:40 split tip-up 2nd row & 50:50 3rd row with flat folding",
+        "Panoramic sunroof preparation and boss mode lever"
+      ],
+      "safety": [
+        "Bharat NCAP 5-star (diesel), ISOFIX anchors",
+        "Hill hold/descent, TPMS, emergency brake alerts",
+        "Perimetric alarm, front & rear parking sensors"
+      ],
+      "technology": [
+        "Connected vehicle ready (iRA upgradeable)",
+        "Dual USB A+C for front row, roof lamp with reading lights",
+        "Cruise control, wireless charger prep"
+      ]
+    },
+    {
+      "name": "Pure X",
+      "adds_over": "Smart",
+      "key_features": [
+        "Voice-assisted panoramic sunroof",
+        "360° HD surround view system",
+        "UltraView 26.03 cm HD infotainment & digital cockpit",
+        "A-type & C-type chargers for all rows",
+        "Front docking module with Fast C type"
+      ]
+    },
+    {
+      "name": "Adventure X",
+      "adds_over": "Pure X",
+      "key_features": [
+        "Trail response modes (Normal/Wet/Rough)",
+        "Trail Hold Electronic Parking Brake with Auto Hold",
+        "Trail Sense auto headlamps, Aqua Sense wipers",
+        "Panoramic sunroof with mood lighting"
+      ]
+    },
+    {
+      "name": "Adventure X+",
+      "adds_over": "Adventure X",
+      "key_features": [
+        "ADAS Level 2 (Adaptive Cruise Control with Stop & Go AT, AEB, LKA, TSR, HBA)",
+        "Ergo Lux 6-way powered driver seat with memory & welcome",
+        "4-way powered co-driver seat with boss mode",
+        "Ventilated 1st row & 2nd row (captain) seats",
+        "Wireless charger, Tyre Pressure Monitoring System"
+      ]
+    },
+    {
+      "name": "Accomplished X",
+      "adds_over": "Adventure X+",
+      "key_features": [
+        "31.24 cm UltraView HD infotainment, 10 JBL speakers",
+        "Winged comfort headrests, 2nd row sunblinds",
+        "Air purifier with AQI display",
+        "Mood lighting on dashboard and doors",
+        "Bejewelled terrain response dial display"
+      ]
+    },
+    {
+      "name": "Accomplished X+",
+      "adds_over": "Accomplished X",
+      "key_features": [
+        "Gesture-controlled powered tailgate",
+        "12 JBL speaker system with Harman AudioworX Advanced",
+        "Front parking sensors, ambient lighting upgrade"
+      ]
+    },
+    {
+      "name": "Accomplished X+ Stealth Edition",
+      "adds_over": "Accomplished X+",
+      "key_features": [
+        "Matte Stealth Black exterior, bespoke Stealth mascot",
+        "R19 matte black alloys, carbon noir interior"
+      ]
+    },
+    {
+      "name": "Accomplished Ultra",
+      "powertrains": [
+        {
+          "engine": "1.5L Hyperion Turbo GDI Petrol",
+          "transmission": "7DCA",
+          "drive_modes": ["Eco", "City", "Sport"]
+        }
+      ],
+      "key_features": [
+        "36.9 cm Samsung Neo QLED infotainment",
+        "Dolby Atmos cabin with 12 JBL speakers",
+        "VisionEX E-IRVM with dual dash cam",
+        "Oyster White & Gold interior theme",
+        "ADAS Level 2+ (ISA map & TSR, BSM, RCW, DOA)"
+      ],
+      "safety": [
+        "Level 2+ ADAS full suite incl. Blind Spot View Monitor",
+        "360° SVS with adaptive guidelines",
+        "Electronic parking brake with auto hold, hill descent",
+        "Emergency & breakdown call integration"
+      ],
+      "technology": [
+        "Alexa home-to-car, iRA 2.0 connected services (1 year)",
+        "Arcade app suite, Mappls navigation on cluster",
+        "Wireless phone projection, dual 65W USB-C + wireless charging"
+      ]
+    },
+    {
+      "name": "Accomplished Ultra Red #DARK",
+      "adds_over": "Accomplished Ultra",
+      "key_features": [
+        "Carnelian Red leatherette interior with red stitching",
+        "Blackstone R19 alloys with red brake calipers",
+        "Red #DARK badging"
+      ]
+    }
+  ]
+},
+{
+  "model": "Nexon",
+  "body_style": "Compact SUV",
+  "price_range_ex_showroom": "₹7.32 Lakh – ₹14.15 Lakh",
+  "price_range_on_road_mumbai": "₹9.21 Lakh – ₹17.06 Lakh",
+  "summary": [
+    "Bharat NCAP & Global NCAP 5-star (petrol/diesel) and first Turbo CNG SUV",
+    "1.2L Turbo Revotron (DCA/AMT/MT), 1.5L Revotorq diesel (MT/AMT), 1.2L Turbo iCNG (MT)",
+    "Voice-assisted panoramic sunroof, 360° HD surround with blind view and Level 2 ADAS (Fearless+ PS DCA)",
+    "26.03 cm Harman infotainment with AudioWorX, JBL 4+4+subwoofer on higher trims",
+    "iRA connected tech, wireless projection, Air purifier, rear sunshade (select trims)"
+  ],
+  "variants": [
+    {
+      "name": "Smart",
+      "powertrains": [
+        {
+          "engine": "1.2L Turbo Revotron Petrol",
+          "transmission": "6MT",
+          "drive_modes": ["Eco", "City", "Sport"]
+        },
+        {
+          "engine": "1.5L Turbo Revotorq Diesel",
+          "transmission": "6MT",
+          "drive_modes": ["Eco", "City", "Sport"]
+        }
+      ],
+      "key_features": [
+        "Bi-function full LED headlamps with welcome DRLs",
+        "26.03 cm digital instrument cluster",
+        "LED tail lamps, 60:40 split rear seats",
+        "6 airbags, ESP with multi-drive modes",
+        "Raised ground clearance (208 mm) & skid plates"
+      ]
+    },
+    {
+      "name": "Smart+",
+      "adds_over": "Smart",
+      "key_features": [
+        "17.78 cm Harman touchscreen with wired Android Auto / Apple CarPlay",
+        "All power windows, remote locking, electrically adjustable ORVMs",
+        "Voice-activated sunroof (Smart+S only)",
+        "Auto headlamps & rain-sensing wipers (Smart+S)"
+      ]
+    },
+    {
+      "name": "Pure",
+      "powertrains": [
+        {
+          "engine": "1.2L Turbo Revotron Petrol",
+          "transmission": "6MT"
+        },
+        {
+          "engine": "1.2L Turbo Revotron Petrol AMT",
+          "transmission": "6AMT"
+        },
+        {
+          "engine": "1.5L Turbo Revotorq Diesel",
+          "transmission": "6MT"
+        },
+        {
+          "engine": "1.2L Turbo Revotron iCNG",
+          "transmission": "6MT",
+          "drive_modes": ["City", "Sport"]
+        }
+      ],
+      "key_features": [
+        "Panoramic sunroof (Pure+ S)",
+        "17.78 cm Harman infotainment with 4 speakers",
+        "Clima Touch automatic HVAC, cruise control (except CNG)",
+        "Rear camera with guidelines, TPMS, Xpress cool",
+        "R16 hyperstyle wheels, cooled glovebox"
+      ],
+      "safety": [
+        "All-LED lighting with front fogs & cornering (Pure+)",
+        "Rear defogger, front parking sensors (Pure+S)",
+        "iCNG safety: twin cylinder below floor, leak detection, thermal incident protection"
+      ]
+    },
+    {
+      "name": "Creative",
+      "adds_over": "Pure",
+      "key_features": [
+        "360° HD surround view with blind view monitor",
+        "Push-button start with smart key",
+        "Harman 26.03 cm infotainment with DSP and 4 speakers + 4 tweeters",
+        "Grand console with leatherette armrest, rear AC vents",
+        "Ventilated front seats (Creative+ PS / #DARK)"
+      ]
+    },
+    {
+      "name": "Fearless+ PS (DCA)",
+      "powertrains": [
+        {
+          "engine": "1.2L Turbo Revotron Petrol",
+          "transmission": "7DCA",
+          "drive_modes": ["Eco", "City", "Sport"]
+        }
+      ],
+      "key_features": [
+        "ADAS Level 2 (adaptive cruise, AEB, LKA, TSR, HBA, BSM, RCW, DOA)",
+        "JBL 4 speakers + 4 tweeters + subwoofer, Harman AudioworX",
+        "iRA connected suite (remote start, AC control, geo-fencing)",
+        "Premium Benecke-Kaliko ventilated leatherette seats",
+        "Rear sunshade, wireless charger, rear Type A+C fast charging"
+      ],
+      "safety": [
+        "Rear cross traffic alert, blind spot detection, door open alert",
+        "TPMS, ESC + traction, rear fog, front parking sensors",
+        "360° SVS with HD recording, ADAS voice alerts"
+      ],
+      "technology": [
+        "73.5 kW Turbo iCNG option (manual) with direct start in CNG",
+        "Voice activated panoramic sunroof, Alexa connected",
+        "26.03 cm infotainment, 26.03 cm digital cluster with navigation"
+      ]
+    },
+    {
+      "name": "Fearless+ PS Red #DARK",
+      "adds_over": "Fearless+ PS (DCA)",
+      "key_features": [
+        "Red #DARK exclusive exterior with black roof",
+        "Carnelian red accents on dashboard, leatherette and stitching",
+        "Charcoal alloy finish with red brake callipers"
+      ]
+    }
+  ]
+},
+{
+  "model": "Punch",
+  "body_style": "Compact SUV",
+  "price_range_ex_showroom": "₹5.50 Lakh – ₹9.30 Lakh",
+  "price_range_on_road_mumbai": "₹6.39 Lakh – ₹10.63 Lakh",
+  "summary": [
+    "5-star Global NCAP safety (2019) and India's first automated CNG hatchback",
+    "1.2L Revotron petrol (MT/AMT), 1.2L Revotron iCNG (MT) with twin-cylinder setup",
+    "Voice-assisted electric sunroof, 26.03 cm infotainment with wireless projection",
+    "Terrain-proven 187 mm ground clearance, Traction Pro mode (AMT)",
+    "iCNG safety: leak detection, thermal protection, micro-switch shutoff"
+  ],
+  "variants": [
+    {
+      "name": "Pure",
+      "powertrains": [
+        {
+          "engine": "1.2L Revotron Petrol",
+          "transmission": "5MT"
+        },
+        {
+          "engine": "1.2L Revotron iCNG",
+          "transmission": "5MT"
+        }
+      ],
+      "key_features": [
+        "Dual airbags, ABS+EBD, ESP & traction control as standard",
+        "7-inch digital instrument cluster",
+        "Tilt steering, front power windows, 90° door opening",
+        "LED turn indicators on ORVM, rear parking sensors"
+      ]
+    },
+    {
+      "name": "Pure (O)",
+      "adds_over": "Pure",
+      "key_features": [
+        "17.78 cm Harman infotainment with 4 speakers",
+        "All power windows, remote locking",
+        "Electrically adjustable ORVMs with auto-fold",
+        "Voice-assisted sunroof (Pure+S iCNG)"
+      ]
+    },
+    {
+      "name": "Adventure",
+      "powertrains": [
+        {
+          "engine": "1.2L Revotron Petrol",
+          "transmission": "5MT / 5AMT"
+        },
+        {
+          "engine": "1.2L Revotron iCNG",
+          "transmission": "5MT"
+        }
+      ],
+      "key_features": [
+        "Voice-assisted electric sunroof (Adventure+)",
+        "Projector headlamps with LED DRLs, fog lamps",
+        "Rear camera with guidelines, cruise control",
+        "Grand console with armrest, A+B fast charging"
+      ]
+    },
+    {
+      "name": "Accomplished",
+      "adds_over": "Adventure",
+      "key_features": [
+        "26.03 cm infotainment with wireless Android Auto/Apple CarPlay",
+        "iTPMS, R15 hyperstyle/alloy wheels",
+        "Auto headlamps, rain-sensing wipers",
+        "Voice-activated sunroof (Accomplished+ S)",
+        "Xpress Cool, cooled glovebox, shark fin antenna"
+      ]
+    },
+    {
+      "name": "Creative (CAMO)",
+      "adds_over": "Accomplished",
+      "key_features": [
+        "CAMO dark green theme, bespoke upholstery",
+        "Gunmetal skid plates, charcoal alloys",
+        "Wireless charger, rear seat armrest, puddle lamps"
+      ]
+    }
+  ]
+},
+{
+  "model": "Altroz",
+  "body_style": "Premium hatchback",
+  "price_range_ex_showroom": "₹6.89 Lakh – ₹11.49 Lakh",
+  "price_range_on_road_mumbai": "₹7.40 Lakh – ₹12.40 Lakh (approx.)",
+  "summary": [
+    "New MY25 Altroz with 5-star safety-ready ALFA architecture",
+    "1.2L Revotron petrol (MT/AMT/DCA), 1.2L iCNG (MT), 1.5L Revotorq diesel (MT)",
+    "Harman 26.03 cm HD infotainment + 26.03 cm digital cockpit + 360° HD SVS",
+    "Level 2 ADAS (Adventure+ & above) with 13 features incl. AEB, ACC*, LKA",
+    "Air purifier, dual-zone climate concierge, boss mode seat, panoramic sunroof"
+  ],
+  "variants": [
+    {
+      "name": "Smart",
+      "powertrains": [
+        {
+          "engine": "1.2L Revotron Petrol",
+          "transmission": "5MT"
+        }
+      ],
+      "key_features": [
+        "Projector headlamps with signature DRLs",
+        "Smart digital steering with illuminated logo",
+        "Dual airbags, ABS+EBD+Corner Stability Control",
+        "90° door opening, 7-inch TFT cluster"
+      ]
+    },
+    {
+      "name": "Smart+",
+      "adds_over": "Smart",
+      "key_features": [
+        "17.78 cm Harman infotainment with 4 speakers",
+        "Rear camera, electrically foldable ORVMs",
+        "All power windows, rear AC vents, height adjustable driver seat"
+      ]
+    },
+    {
+      "name": "Pure",
+      "powertrains": [
+        {
+          "engine": "1.2L Revotron Petrol",
+          "transmission": "5MT / 6DCA"
+        },
+        {
+          "engine": "1.2L Revotron Petrol AMT",
+          "transmission": "5AMT"
+        },
+        {
+          "engine": "1.2L iCNG",
+          "transmission": "5MT"
+        },
+        {
+          "engine": "1.5L Revotorq Diesel",
+          "transmission": "5MT"
+        }
+      ],
+      "key_features": [
+        "ClimaTouch automatic HVAC",
+        "Cruise control (petrol/diesel)",
+        "Remote locking, 4 speakers, rear wiper & defogger",
+        "R16 dual-tone wheel covers, LED DRLs"
+      ]
+    },
+    {
+      "name": "Pure+ S",
+      "adds_over": "Pure",
+      "key_features": [
+        "Voice-assisted panoramic sunroof",
+        "Auto headlamps and rain-sensing wipers",
+        "Roof rails, R17 alloys"
+      ]
+    },
+    {
+      "name": "Adventure",
+      "adds_over": "Pure+",
+      "key_features": [
+        "360° HD surround view, blind spot monitor",
+        "UltraView 26.03 cm HD infotainment + 26.03 cm digital cluster",
+        "Wireless charger, JBL 6-speaker setup",
+        "Ventilated front seats, boss mode rear seat"
+      ]
+    },
+    {
+      "name": "Accomplished",
+      "adds_over": "Adventure",
+      "key_features": [
+        "ADAS Level 2 with AEB (vehicle/pedestrian/cyclist), ACC* (DCA), LKA, HBA, TSR",
+        "Terrain response with drive dial, multi-colour mood lighting",
+        "Air purifier with AQI display, winged headrests",
+        "Powered tailgate gesture open, Type-C 65W chargers front/rear"
+      ]
+    },
+    {
+      "name": "Accomplished Ultra",
+      "powertrains": [
+        {
+          "engine": "1.2L Revotron Petrol",
+          "transmission": "6DCA"
+        }
+      ],
+      "key_features": [
+        "36.9 cm Samsung Neo QLED infotainment",
+        "12 JBL speakers with Dolby Atmos",
+        "VisionEX E-IRVM with dual dash cam",
+        "Oyster White & Gold cabin, adaptive lighting",
+        "ADAS Level 2+ (ISA map & TSR, BSD, RCW, DOA)"
+      ]
+    }
+  ]
+},
+{
+  "model": "Tiago",
+  "body_style": "Hatchback",
+  "price_range_ex_showroom": "₹4.57 Lakh – ₹7.82 Lakh",
+  "price_range_on_road_mumbai": "₹5.35 Lakh – ₹9.41 Lakh",
+  "summary": [
+    "5-star safety ready architecture with ESP standard",
+    "1.2L Revotron petrol (MT/AMT), 1.2L iCNG (MT/AMT), Tiago NRG crossover",
+    "First AMT CNG hatchback with direct start in CNG & auto mode switch",
+    "26.03 cm infotainment, 4 speakers + 2 tweeters, digital cluster",
+    "Premium features: voice sunroof (XZA+), cruise control, auto headlamps"
+  ],
+  "variants": [
+    {
+      "name": "XE",
+      "powertrains": [
+        {
+          "engine": "1.2L Revotron Petrol",
+          "transmission": "5MT"
+        }
+      ],
+      "key_features": [
+        "Dual airbags, ABS+EBD, seatbelt reminder all seats",
+        "4-inch digital instrument cluster",
+        "Central locking, tilt steering, ISOFIX prep"
+      ]
+    },
+    {
+      "name": "XM",
+      "adds_over": "XE",
+      "key_features": [
+        "8.89 cm infotainment with 2 speakers",
+        "Rear parking sensors, power windows",
+        "Height adjustable driver seat"
+      ]
+    },
+    {
+      "name": "XT / XTA",
+      "powertrains": [
+        {
+          "engine": "1.2L Revotron Petrol",
+          "transmission": "5MT / 5AMT"
+        },
+        {
+          "engine": "1.2L Revotron iCNG",
+          "transmission": "5MT / 5AMT"
+        }
+      ],
+      "key_features": [
+        "17.78 cm Harman touchscreen with Android Auto/Apple CarPlay",
+        "4 speakers, steering mounted controls",
+        "ESP, hill hold control, rear washer & defogger"
+      ]
+    },
+    {
+      "name": "XZ / XZA",
+      "adds_over": "XT / XTA",
+      "key_features": [
+        "LED DRLs, projector headlamps",
+        "Reverse camera with dynamic guidelines",
+        "Cruise control (petrol), auto headlamps, rain-sensing wipers",
+        "16-inch hyperstyle alloys (petrol) / 14-inch CNG hyperstyle"
+      ]
+    },
+    {
+      "name": "XZ+ / XZA+ Dual Tone",
+      "adds_over": "XZ / XZA",
+      "key_features": [
+        "Voice-assisted electric sunroof",
+        "Tyre pressure monitoring, cooled glovebox",
+        "Auto fold ORVMs with welcome function",
+        "iCNG twin-cylinder tech with flat boot (60 L water capacity)"
+      ]
+    },
+    {
+      "name": "Tiago NRG",
+      "powertrains": [
+        {
+          "engine": "1.2L Revotron Petrol",
+          "transmission": "5MT / 5AMT"
+        },
+        {
+          "engine": "1.2L Revotron iCNG",
+          "transmission": "5MT / 5AMT"
+        }
+      ],
+      "key_features": [
+        "SUV-inspired 181 mm ground clearance, body cladding",
+        "Charcoal black interiors, push button start",
+        "Roof rails, skid plates, 3D infotainment"
+      ]
+    }
+  ]
+},
+{
+  "model": "Curvv",
+  "body_style": "Coupé SUV",
+  "price_range_ex_showroom": "₹9.66 Lakh – ₹18.85 Lakh",
+  "price_range_on_road_mumbai": "₹11.08 Lakh – ₹22.55 Lakh",
+  "summary": [
+    "ICe version of Curvv with 5-star ready profile",
+    "1.5L Revotron NA DCT, 1.5L Hyperion Turbo GDI (DCA/6AT), 1.5L Kryojet diesel (MT/AT)",
+    "31.24 cm Harman infotainment, 26.03 cm digital cockpit, 12 JBL speakers",
+    "Level 2 ADAS (22 features) with ISA, Blind Spot View Monitor & RCW",
+    "Twin zone concierge AC, 6-way powered driver seat, panoramic sunroof"
+  ],
+  "variants": [
+    {
+      "name": "Smart",
+      "powertrains": [
+        {
+          "engine": "1.5L Revotron NA Petrol",
+          "transmission": "6MT"
+        }
+      ],
+      "key_features": [
+        "Full LED headlamps with Light Saber DRLs",
+        "10.16 cm digital cockpit, 10.25 cm infotainment",
+        "6 airbags, ESC, EPB with auto hold",
+        "Flush door handles with welcome lights"
+      ]
+    },
+    {
+      "name": "Pure / Pure X",
+      "powertrains": [
+        {
+          "engine": "1.5L Revotron NA Petrol",
+          "transmission": "6MT / 7DCA"
+        },
+        {
+          "engine": "1.5L Hyperion Turbo GDI Petrol",
+          "transmission": "7DCA"
+        },
+        {
+          "engine": "1.5L Kryojet Diesel",
+          "transmission": "6MT / 6AT"
+        }
+      ],
+      "key_features": [
+        "Voice-assisted panoramic sunroof (Pure+)",
+        "17.78 cm infotainment with 6 speakers",
+        "All discs, terrain modes (Normal/Wet/Rough)",
+        "Grand console with leatherette armrest"
+      ]
+    },
+    {
+      "name": "Creative / Creative+ S",
+      "adds_over": "Pure",
+      "key_features": [
+        "26.03 cm infotainment & digital cockpit with navigation",
+        "360° HD surround view & blind spot view monitor",
+        "Wireless charger, iTPMS, front parking sensors",
+        "JBL 9 speaker system with Harman AudioworX"
+      ]
+    },
+    {
+      "name": "Accomplished",
+      "adds_over": "Creative",
+      "key_features": [
+        "Fully automatic dual-zone Concierge AC",
+        "ADAS Level 2 (ACC with Stop & Go, AEB, LKA, HBA, TSR)",
+        "12 JBL speakers with Dolby Atmos",
+        "Rear seat armrest, 60:40 split with recline",
+        "Ventilated seats, 6-way powered driver seat with memory"
+      ]
+    },
+    {
+      "name": "Accomplished+ S",
+      "adds_over": "Accomplished",
+      "key_features": [
+        "Horizon View triple screen experience",
+        "ADAS Level 2+ with ISA (map+TSR), BSM, RCW, DOA",
+        "BreatheIQ purifier with AQI display",
+        "Powered tailgate with gesture control",
+        "65W USB-C front & rear with multimedia"
+      ]
+    },
+    {
+      "name": "Accomplished+ #DARK",
+      "adds_over": "Accomplished+ S",
+      "key_features": [
+        "All-black carbon noir interior",
+        "R18 #DARK alloys, #DARK branding",
+        "Leatherette with #DARK insignia"
+      ]
+    }
+  ]
+},
+{
+  "model": "Tigor",
+  "body_style": "Compact sedan",
+  "price_range_ex_showroom": "₹5.49 Lakh – ₹8.74 Lakh",
+  "price_range_on_road_mumbai": "₹6.50 Lakh – ₹9.90 Lakh",
+  "summary": [
+    "5-star safety ready platform with ESP & hill hold",
+    "1.2L Revotron petrol (MT/AMT), 1.2L iCNG (MT/AMT) – first automatic CNG sedan",
+    "26.03 cm Harman infotainment, 8 speaker surround system",
+    "360° SVS with blind view (XZ+ Lux), voice-assisted sunroof, auto headlamps",
+    "iCNG twin cylinder with 70L (water) volume, direct start in CNG"
+  ],
+  "variants": [
+    {
+      "name": "XM",
+      "powertrains": [
+        {
+          "engine": "1.2L Revotron Petrol",
+          "transmission": "5MT"
+        },
+        {
+          "engine": "1.2L Revotron iCNG",
+          "transmission": "5MT"
+        }
+      ],
+      "key_features": [
+        "8.89 cm Harman infotainment with 4 speakers",
+        "All power windows, steering mounted audio",
+        "Remote locking, height adjustable driver seat",
+        "Rear defogger prep, roof antenna"
+      ]
+    },
+    {
+      "name": "XT",
+      "adds_over": "XM",
+      "key_features": [
+        "17.76 cm Harman touchscreen with Android Auto/Apple CarPlay",
+        "Reverse parking camera, 4 speakers + 4 tweeters",
+        "LED DRLs, projector headlamps"
+      ]
+    },
+    {
+      "name": "XZ",
+      "adds_over": "XT",
+      "key_features": [
+        "16-inch hyperstyle wheels (petrol), 14-inch CNG wheels",
+        "Cruise control, auto headlamps, rain sensing wipers",
+        "8-speaker surround (4 speakers + 4 tweeters)"
+      ]
+    },
+    {
+      "name": "XZ+",
+      "adds_over": "XZ",
+      "key_features": [
+        "Voice-assisted electric sunroof",
+        "Tyre pressure monitoring, cooled glovebox",
+        "Shark fin antenna, auto fold ORVMs"
+      ]
+    },
+    {
+      "name": "XZ+ Lux",
+      "adds_over": "XZ+",
+      "key_features": [
+        "26.03 cm Harman infotainment with wireless projection",
+        "360° SVS with blind view monitor",
+        "Voice-assisted dual-zone climate (auto AC)",
+        "Air purifier, wireless charger"
+      ]
+    }
+  ]
+}
