@@ -57,6 +57,23 @@ from get_dealers import get_dealers
 logger = logging.getLogger("outbound-caller")
 logger.setLevel(logging.INFO)
 
+# Topic for transcript data messages on LiveKit (subscribers can filter by this)
+TRANSCRIPT_TOPIC = "transcript"
+
+
+async def _publish_transcript_to_room(room: Any, payload: dict) -> None:
+    """Publish a transcript chunk to the LiveKit room as a data message so subscribers can use it."""
+    if room is None:
+        return
+    try:
+        local = getattr(room, "local_participant", None)
+        if local is None:
+            return
+        data = json.dumps(payload).encode("utf-8")
+        await local.publish_data(data, topic=TRANSCRIPT_TOPIC)
+    except Exception as e:
+        logger.warning(f"Failed to publish transcript to room: {e}")
+
 
 async def update_lead_in_db(
     lead_id: str,
@@ -328,6 +345,8 @@ class OutboundCaller(Agent):
         
         # Transcript capture
         self.transcript: list[dict] = []
+        # Room reference for publishing transcript data messages (set in entrypoint)
+        self.room: Any = None
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
@@ -558,6 +577,8 @@ async def entrypoint(ctx: JobContext):
         # Fallback to env var for test/manual calls without metadata
         outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
     else:
+        logger.info("Metadata found in the job")
+        logger.info(ctx.job.metadata)
         metadata = json.loads(ctx.job.metadata)
         
         # Get trunk_id from metadata (set by celery task)
@@ -594,11 +615,26 @@ async def entrypoint(ctx: JobContext):
     # dial_info is a dict with the following keys:
     # - phone_number: the phone number to dial
     # - transfer_to: the phone number to transfer the call to when requested
-    phone_number = dial_info["phone_number"]
-    participant_identity = dial_info["full_name"]
-    full_name = dial_info["full_name"]
+    phone_number = (dial_info.get("phone_number") or "").strip()
+    participant_identity = (dial_info.get("full_name") or "unknown").strip() or "unknown"
+    full_name = participant_identity
     logger.info(f"full_name: {full_name}")
     logger.info(f"user_details: {user_details}")
+
+    if not phone_number:
+        logger.error(
+            "Missing SIP callee number: metadata must include 'phone' or 'mobile_number'. "
+            "When dispatching the agent, pass metadata with phone/mobile_number set."
+        )
+        if lead_id:
+            asyncio.create_task(update_lead_in_db(
+                lead_id=lead_id,
+                connected=False,
+                agent_summary="Agent error: missing phone number in metadata",
+                room_id=room_id,
+            ))
+        ctx.shutdown()
+        return
 
     # look up the user's phone number and appointment details
     agent = OutboundCaller(
@@ -608,10 +644,12 @@ async def entrypoint(ctx: JobContext):
         batch_name=batch_name,
         room_id=room_id,
     )
+    agent.room = ctx.room  # for publishing transcript to LiveKit
 
     # the following uses GPT-4o, Deepgram and Cartesia
     session = AgentSession(
-        turn_detection=MultilingualModel(),
+        # turn_detection=MultilingualModel(),  # Temporarily disabled - requires model download
+        # Use VAD-based turn detection instead (simpler, no model files needed)
         vad=silero.VAD.load(
             activation_threshold=0.9,      # Lower = more sensitive (default: 0.5)
             min_speech_duration=1,      # Min speech duration to trigger (default: 0.05s)
@@ -647,15 +685,24 @@ async def entrypoint(ctx: JobContext):
     # Capture user transcripts as they arrive (final only)
     @session.on("user_input_transcribed")
     def on_user_input_transcribed(event):
-        """Capture finalized user speech."""
+        """Capture finalized user speech and publish to LiveKit room."""
         try:
             if event.is_final and event.transcript:
-                agent.transcript.append({
+                chunk = {
+                    "event": "transcript",
                     "role": "user",
                     "text": event.transcript,
                     "timestamp": datetime.utcnow().isoformat(),
+                    "room_id": room_id,
+                }
+                agent.transcript.append({
+                    "role": "user",
+                    "text": event.transcript,
+                    "timestamp": chunk["timestamp"],
                 })
                 logger.info(f"Transcript [user]: {event.transcript[:100]}...")
+                if agent.room:
+                    asyncio.create_task(_publish_transcript_to_room(agent.room, chunk))
         except Exception as e:
             logger.warning(f"Failed to capture user transcript: {e}")
 
@@ -689,12 +736,22 @@ async def entrypoint(ctx: JobContext):
                 content = " ".join(parts)
             
             if content:  # Only add non-empty entries
+                ts = datetime.utcnow().isoformat()
                 agent.transcript.append({
                     "role": role,
                     "text": content,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": ts,
                 })
                 logger.info(f"Transcript [{role}]: {content[:100]}...")
+                chunk = {
+                    "event": "transcript",
+                    "role": role,
+                    "text": content,
+                    "timestamp": ts,
+                    "room_id": room_id,
+                }
+                if agent.room:
+                    asyncio.create_task(_publish_transcript_to_room(agent.room, chunk))
         except Exception as e:
             logger.warning(f"Failed to capture transcript item: {e}")
 
@@ -761,14 +818,48 @@ async def entrypoint(ctx: JobContext):
         asyncio.create_task(call_timeout())
 
     except api.TwirpError as e:
+        sip_code = e.metadata.get("sip_status_code") or ""
+        sip_status = e.metadata.get("sip_status", "unknown")
         logger.error(
             f"error creating SIP participant: {e.message}, "
-            f"SIP status: {e.metadata.get('sip_status_code')} "
-            f"{e.metadata.get('sip_status')}"
+            f"SIP status: {sip_code} {sip_status}"
         )
-        # Update call log for failed SIP connection
+        # 486 User Busy (or similar) can arrive after the callee already answered and joined.
+        # If we already have a participant in the room, continue and speak so the agent is heard.
+        if sip_code == "486" or "busy" in (sip_status or "").lower():
+            try:
+                await session_started
+                participant = await asyncio.wait_for(
+                    ctx.wait_for_participant(identity=participant_identity),
+                    timeout=5.0,
+                )
+                logger.info(f"Participant joined despite 486; sending greeting. participant={participant.identity}")
+                await session.generate_reply(
+                    instructions=f"Greet the vendor in hindi, eg. of English: Hello! I am Nikita from Tata Chemicals. Am I speaking with {full_name}?",
+                    allow_interruptions=False,
+                )
+                agent.set_participant(participant)
+                # Start call timeout as in the success path
+                async def call_timeout():
+                    await asyncio.sleep(150)
+                    if not agent.call_outcome_written:
+                        if lead_id:
+                            await update_lead_in_db(
+                                lead_id=lead_id,
+                                connected=True,
+                                recall_requested=True,
+                                agent_summary="Call ended due to 3-minute timeout",
+                                room_id=room_id,
+                                transcript=agent.transcript if agent.transcript else None,
+                            )
+                        agent.call_outcome_written = True
+                        await agent.hangup()
+                asyncio.create_task(call_timeout())
+                return
+            except (asyncio.TimeoutError, Exception) as fallback_err:
+                logger.warning(f"Could not recover after 486: {fallback_err}")
+        # No participant or not 486: treat as failed SIP and shutdown
         if lead_id and not agent.call_outcome_written:
-            sip_status = e.metadata.get('sip_status', 'unknown')
             await update_lead_in_db(
                 lead_id=lead_id,
                 connected=False,
@@ -783,6 +874,6 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="tatchem-v2v-agent",
+            agent_name="tcpl-tatachem-v2v-agent",
         )
     )
