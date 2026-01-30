@@ -57,6 +57,23 @@ from get_dealers import get_dealers
 logger = logging.getLogger("outbound-caller-en")
 logger.setLevel(logging.INFO)
 
+# Topic for transcript data messages on LiveKit (subscribers can filter by this)
+TRANSCRIPT_TOPIC = "transcript"
+
+
+async def _publish_transcript_to_room(room: Any, payload: dict) -> None:
+    """Publish a transcript chunk to the LiveKit room as a data message so subscribers can use it."""
+    if room is None:
+        return
+    try:
+        local = getattr(room, "local_participant", None)
+        if local is None:
+            return
+        data = json.dumps(payload).encode("utf-8")
+        await local.publish_data(data, topic=TRANSCRIPT_TOPIC)
+    except Exception as e:
+        logger.warning(f"Failed to publish transcript to room: {e}")
+
 
 async def update_lead_in_db(
     lead_id: str,
@@ -328,6 +345,8 @@ class OutboundCallerEN(Agent):
         
         # Transcript capture
         self.transcript: list[dict] = []
+        # Room reference for publishing transcript data messages (set in entrypoint)
+        self.room: Any = None
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
@@ -618,6 +637,7 @@ async def entrypoint(ctx: JobContext):
         batch_name=batch_name,
         room_id=room_id,
     )
+    agent.room = ctx.room  # for publishing transcript to LiveKit
 
     # English-only configuration: Deepgram STT + Cartesia TTS (English)
     session = AgentSession(
@@ -647,15 +667,25 @@ async def entrypoint(ctx: JobContext):
     # Capture user transcripts as they arrive (final only)
     @session.on("user_input_transcribed")
     def on_user_input_transcribed(event):
-        """Capture finalized user speech."""
+        """Capture finalized user speech and publish to LiveKit room."""
         try:
             if event.is_final and event.transcript:
+                ts = datetime.utcnow().isoformat()
+                chunk = {
+                    "event": "transcript",
+                    "role": "user",
+                    "text": event.transcript,
+                    "timestamp": ts,
+                    "room_id": room_id,
+                }
                 agent.transcript.append({
                     "role": "user",
                     "text": event.transcript,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": ts,
                 })
                 logger.info(f"Transcript [user]: {event.transcript[:100]}...")
+                if agent.room:
+                    asyncio.create_task(_publish_transcript_to_room(agent.room, chunk))
         except Exception as e:
             logger.warning(f"Failed to capture user transcript: {e}")
 
@@ -689,12 +719,22 @@ async def entrypoint(ctx: JobContext):
                 content = " ".join(parts)
             
             if content:  # Only add non-empty entries
+                ts = datetime.utcnow().isoformat()
                 agent.transcript.append({
                     "role": role,
                     "text": content,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": ts,
                 })
                 logger.info(f"Transcript [{role}]: {content[:100]}...")
+                chunk = {
+                    "event": "transcript",
+                    "role": role,
+                    "text": content,
+                    "timestamp": ts,
+                    "room_id": room_id,
+                }
+                if agent.room:
+                    asyncio.create_task(_publish_transcript_to_room(agent.room, chunk))
         except Exception as e:
             logger.warning(f"Failed to capture transcript item: {e}")
 
@@ -783,6 +823,6 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="tatchem-v2v-agent-en",
+            agent_name="tatachem-v2v-agent-en",
         )
     )

@@ -318,6 +318,19 @@ Configure SIP trunk for outbound calling:
 - Product information loaded from `tata_chemicals_products.json` file
 - Supports both manual calls (via API) and batch dialing (via Celery)
 
+## Transcript Data Messages (LiveKit)
+
+The agent publishes **transcript chunks** to the LiveKit room as **data messages** so other services (dashboards, analytics, recording pipelines) can consume them.
+
+- **Topic**: `transcript`
+- **Payload** (JSON): `{"event": "transcript", "role": "user"|"assistant", "text": "...", "timestamp": "...", "room_id": "..."}`
+- **When**: Each time the user speaks (final transcript) or the agent speaks (conversation item added).
+
+To consume on the server or in a client:
+
+1. Subscribe to the room’s data messages (filter by topic `transcript`).
+2. Parse the JSON payload; `role` is `user` or the agent role (e.g. `assistant`), `text` is the utterance, `room_id` identifies the call.
+
 ## Error Handling
 
 - **SIP Call Failure**: Logs error, updates lead as `connected=false`

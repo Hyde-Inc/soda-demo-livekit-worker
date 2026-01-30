@@ -225,7 +225,7 @@ async def dispatch_agent_for_lead(
         agent_dispatch = await lk_api.agent_dispatch.create_dispatch(
             api.CreateAgentDispatchRequest(
                 room=room_name,
-                agent_name="outbound-caller-1",
+                agent_name="tcpl-tatachem-v2v-agent",
                 metadata=json.dumps(metadata),
             )
         )

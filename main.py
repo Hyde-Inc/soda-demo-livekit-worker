@@ -51,6 +51,22 @@ def get_product_from_json(model_name: str) -> Optional[dict[str, Any]]:
             return product
     return None
 
+
+def load_form_from_json() -> dict[str, Any]:
+    """Load merged form definition from form_non_integrated.json (all sections: intake, master data, additional, procurement, accounts)."""
+    json_path = Path(__file__).parent / "form_non_integrated.json"
+    with open(json_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def get_all_form_questions(form: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return all questions from all sections in order (Supplier Intake, Master Data, Additional Fields, Procurement, Accounts)."""
+    questions = []
+    for section in form.get("sections", []):
+        questions.extend(section.get("fields", []))
+    return questions
+
+
 from get_dealers import get_dealers
 
 
@@ -216,15 +232,31 @@ class OutboundCaller(Agent):
                 - Batch: {batch_name or 'N/A'}
             """
         
+        # Load merged form from form_non_integrated.json and get all questions for instructions
+        form = load_form_from_json()
+        all_questions = get_all_form_questions(form)
+        questions_block_lines = []
+        for q in all_questions[6:]:
+            num = q.get("number", "")
+            name = q.get("name", "")
+            desc = q.get("description")
+            allowed = q.get("allowedValues")
+            req = " (required)" if q.get("required") else ""
+            line = f"- [{num}] {name}{req}"
+            if desc:
+                line += f" — {desc}"
+            if allowed:
+                line += f" — Options: {', '.join(str(v) for v in allowed)}"
+            questions_block_lines.append(line)
+        questions_block = "\n                ".join(questions_block_lines) if questions_block_lines else "(No questions loaded)"
+        logger.info("Form questions loaded for prompt: %d questions", len(all_questions))
         super().__init__(
             instructions=f"""
-                
                 ## IDENTITY
-                You are **Nikita** from **Tata Chemicals**. Voice-only agent for vendor outreach.
+                You are **Nikita** from **Tata Chemicals**. Voice-only agent helping vendors fill the supplier onboarding form.
                 **LANGUAGE**: Speak in **Hinglish** (mix of Hindi and English). Keep it natural and conversational.
                 Ensure to use the devnagri script for hindi words and roman for english words.
                 Even convert the output of tool calls to devnagri script.
-                All the information about raw materials you have is in english
                 You must not put any symbols or numbers in the output.
                 You must not put any emojis in the output.
                 You must not put any special characters in the output.
@@ -236,78 +268,36 @@ class OutboundCaller(Agent):
                 You must not put any csv tags in the output.
                 
                 ## OBJECTIVE
-                Reach out to vendors who have shown interest in providing raw materials to Tata Chemicals. Re-qualify their interest and understand their supply capabilities. Be professional, helpful and conversational.
+                Help the vendor fill the **Supplier Onboarding** form (all sections: Intake, Master Data, Additional Fields, Procurement, Accounts). Go through each question one by one in the order listed, collect answers in Hinglish, and be professional and helpful.
                 
-                {vendor_context}
-                {lead_context}
+                
+                ## OPENING (say this first after confirming you are speaking with the right person)
+                "Namaste, mai Nikita baat kar rahi hu, Tata Chemicals se, aur mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu. Kya aap supplier onboarding form ko bharna chahte ho?"
+                If they say yes/haaan, then move to the questions below. Do not mention any section name when asking the questions.
+                
+                ## FORM QUESTIONS (ask in this order, one at a time — all sections merged)
+                {questions_block}
+                
+                ## CALL FLOW
+                - Start with the opening line above, then ask questions in the order listed.
+                - One question at a time. After you get an answer, acknowledge briefly and ask the next question.
+                - If they have "List of Choices", offer the options in simple words; they can also answer in their own words if it matches.
+                - For optional (non-required) questions, they can say "skip" or "nahi chahiye"; then move to the next.
+                - Keep responses crisp (max 30 words when possible).
+                - When all questions are done, say: "Form complete ho gaya. Dhanyavaad aapke time ke liye. Aapka din accha ho!" then call update_lead_after_call and end_call.
                 
                 ## RESTRICTIONS
                 - No CRM/system references
-                - Always use raw material names clearly
-                - No phone/email collection
-                - One question at a time, crisp responses (max 30 words)
-
-                
-                ## CALL FLOW (FLEXIBLE GUIDELINES)
-                
-                **Step 1: Greeting**
-                "Hello, main Nikita bol rahi hoon Tata Chemicals se. Kya main {{Vendor Name}} ji se baat kar rahi hoon?"
-                
-                **Step 2: Reference Previous Interest**
-                Use opty_history or previous interest history to find what raw material they showed interest in.
-                "Aapne {{relative time}} mein {{Raw Material Name}} provide karne mein interest dikhaya tha. Kya aap abhi bhi interested hain is raw material ko supply karne mein?"
-                
-                **Step 3: Handle Response Naturally**
-                
-                **If YES**: Great! Proceed to understand their supply capacity and timeline.
-                
-                **If NO or NOT INTERESTED in that material**:
-                - Ask: "Toh aap kaunse raw material supply kar sakte hain?" or "Toh aap konsa raw material provide karne mein interested hain?"
-                - **If they mention other materials**: Acknowledge and ask about their supply capacity
-                - **If they're unsure**: Proactively mention what Tata Chemicals is looking for based on Next Best Action data
-                - Use get_product_details to share requirements if they want more info
-                
-                **Step 4: Understand Supply Capacity**
-                "Aap kitna quantity supply kar sakte hain monthly? Aur aap kitne dinon mein supply start kar sakte hain?"
-                
-                Classify timeline response:
-                - "30_days": 0-30 days, immediately, this week/month, jaldi, turant, abhi
-                - "60_days": 31-60 days, 1-2 months, next month
-                - "90_days": 60+ days, later, sochna hai, pata nahi
-                
-                **Step 5: Ask Location/Pincode**
-                "Aapka manufacturing unit kahan hai? Aapka pincode kya hai? Main aapko procurement team se connect karwa sakti hoon."
-                
-                **Step 6: Confirm Next Steps**
-                - If they're interested and ready: "Main aapke details procurement team ko forward kar deti hoon. Woh aapko jaldi contact karenge."
-                - If they need time: "Theek hai, main aapko {{timeframe}} mein dobara call kar sakti hoon?"
-                - Once confirmed, proceed to end call
-                
-                **Step 7: End Call**
-                1. Say: "Dhanyavaad aapke time ke liye. Aapka din accha ho!"
-                2. Call update_lead_after_call
-                3. Call end_call
-                
-                ## RAW MATERIALS CONTEXT
-                Common raw materials for Tata Chemicals: Soda Ash, Salt, Bromine, Calcium Chloride, Industrial Chemicals, etc.
-                Use the information from metadata and Next Best Action to understand what specific materials are relevant.
-                
-                ## PRODUCT INFORMATION & SUGGESTIONS
-                - Use get_product_details freely when vendor asks about any raw material requirements/specifications
-                - When vendor asks "aap suggest karo" or is confused, use NBA recommendations
-                - Share 2-3 key requirements based on what Tata Chemicals needs
-                
-                ## PINCODE HANDLING
-                If vendor gives 5-digit pincode, auto-correct by inserting 0 at common positions.
-                Only ask to repeat if all corrections fail.
+                - One question at a time
+                - Do not collect phone/email beyond what is in the form (e.g. Primary Contact Mobile, Email are in the list)
                 
                 ## CLOSING AND CALL OUTCOME LOGGING
                 **CRITICAL**: Before ending ANY call, call `update_lead_after_call`:
-                - If vendor confirmed interest and ready to supply: opty_created=true
-                - If wants callback: recall_requested=true  
+                - If vendor completed or partially completed form: opty_created=true
+                - If wants callback: recall_requested=true
                 - If not interested: not_interested=true
                 - If voicemail/no answer: connected=false
-                - **ALWAYS** include: model (raw material name), time_to_buy_raw (supply timeline), dealer_name (vendor company name if available)
+                - Include agent_summary with what was collected (e.g. "Form partially filled: Supplier Name, Legal Name, Region, ...")
                 
                 ## END CALL SEQUENCE
                 1. SAY: "Dhanyavaad aapke time ke liye. Aapka din accha ho!"
@@ -316,18 +306,15 @@ class OutboundCaller(Agent):
                 
                 ## ANSWERING MACHINE DETECTION
                 Signs: automated greetings, "leave a message", beep tones
-                Action: Call update_lead_after_call with connected=false, then detected_answering_machine
+                Action: Call update_lead_after_call with connected=false
                 
                 ## TOOL CALL BEHAVIOR
-                Before ANY tool call EXCEPT end_call and update_lead_after_call, say: "Ek second, main check kar rahi hoon..."
-                Do NOT say any waiting phrase before end_call or update_lead_after_call - just call them silently.
+                Do NOT say any waiting phrase before end_call, update_lead_after_call, or submit_form_answers - call them silently.
                 
                 ## KEY RULES
                 - Be professional, conversational and helpful, not robotic
-                - If vendor needs guidance, proactively mention what Tata Chemicals is looking for based on NBA
-                - Use get_product_details to answer raw material requirement questions
-                - Auto-correct 5-digit pincodes
-                - Focus on understanding supply capacity and timeline
+                - Focus on filling the full Supplier Onboarding form; use the question list above as the single source of questions (all sections in order)
+                - ALWAYS AND ONLY call submit_form_answers with the collected Q&A JSON before end_call (so answers are published to the room)
                 - ALWAYS call update_lead_after_call before end_call
             """
         )
@@ -500,6 +487,46 @@ class OutboundCaller(Agent):
             self.call_outcome_written = True
         
         await self.hangup()
+
+    @function_tool()
+    async def submit_form_answers(self, ctx: RunContext, form_answers_json: str) -> dict:
+        """
+        MANDATORY: Call this at the end of the call (when form is complete or when ending) to submit
+        all collected question-answer pairs in JSON format. This publishes the form answers to the
+        room so subscribers can consume them.
+
+        Args:
+            form_answers_json: A JSON string: array of objects, each with:
+                - number: question number (e.g. "2", "16.1")
+                - name: question label (e.g. "Region", "Supplier Name")
+                - formName: form field name (e.g. "region", "supplierName")
+                - answer: the vendor's answer (string)
+
+                Example: [{"number": "2", "name": "Region", "formName": "region", "answer": "Mithapur"}, {"number": "16.1", "name": "Supplier Name", "formName": "supplierName", "answer": "ABC Corp"}]
+
+        Returns:
+            Status dict with success and message.
+        """
+        try:
+            answers = json.loads(form_answers_json)
+            if not isinstance(answers, list):
+                answers = [answers]
+            payload = {
+                "event": "form_answers",
+                "role": "agent",
+                "form_answers": answers,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            if self.room:
+                await _publish_transcript_to_room(self.room, payload)
+            logger.info("Published form_answers to room: %d Q&A pairs", len(answers))
+            return {"success": True, "message": f"Submitted {len(answers)} form answers to room", "count": len(answers)}
+        except json.JSONDecodeError as e:
+            logger.warning("submit_form_answers invalid JSON: %s", e)
+            return {"success": False, "error": f"Invalid JSON: {e}"}
+        except Exception as e:
+            logger.warning("submit_form_answers failed: %s", e)
+            return {"success": False, "error": str(e)}
 
     @function_tool
     async def get_product_details(self, model_name: str) -> Optional[dict[str, Any]]:
@@ -791,7 +818,7 @@ async def entrypoint(ctx: JobContext):
         await session_started
         participant = await ctx.wait_for_participant(identity=participant_identity)
         await session.generate_reply(
-            instructions=f"Greet the vendor in hindi, eg. of English: Hello! I am Nikita from Tata Chemicals. Am I speaking with {full_name}?",
+            instructions=f"Greet in Hinglish: Namaste, Mai Nikita bol rahi hu Tata Chemicals se. Mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu — Kya aao supplier onboarding form ko bharna chahte ho?",
             allow_interruptions=False
         )
         logger.info(f"participant joined: {participant.identity}")
@@ -799,23 +826,23 @@ async def entrypoint(ctx: JobContext):
         agent.set_participant(participant)
         
         # Start 3-minute call timeout
-        async def call_timeout():
-            await asyncio.sleep(150)  # 2.5 minutes
-            if not agent.call_outcome_written:
-                logger.info(f"Call timeout reached (3 min) for lead {lead_id}, ending call")
-                if lead_id:
-                    await update_lead_in_db(
-                        lead_id=lead_id,
-                        connected=True,
-                        recall_requested=True,  # Schedule callback for tomorrow, prevent immediate redial
-                        agent_summary="Call ended due to 3-minute timeout",
-                        room_id=room_id,
-                        transcript=agent.transcript if agent.transcript else None,
-                    )
-                agent.call_outcome_written = True
-                await agent.hangup()
+        # async def call_timeout():
+        #     await asyncio.sleep(150)  # 2.5 minutes
+        #     if not agent.call_outcome_written:
+        #         logger.info(f"Call timeout reached (3 min) for lead {lead_id}, ending call")
+        #         if lead_id:
+        #             await update_lead_in_db(
+        #                 lead_id=lead_id,
+        #                 connected=True,
+        #                 recall_requested=True,  # Schedule callback for tomorrow, prevent immediate redial
+        #                 agent_summary="Call ended due to 3-minute timeout",
+        #                 room_id=room_id,
+        #                 transcript=agent.transcript if agent.transcript else None,
+        #             )
+        #         agent.call_outcome_written = True
+        #         await agent.hangup()
         
-        asyncio.create_task(call_timeout())
+        # asyncio.create_task(call_timeout())
 
     except api.TwirpError as e:
         sip_code = e.metadata.get("sip_status_code") or ""
@@ -828,33 +855,33 @@ async def entrypoint(ctx: JobContext):
         # If we already have a participant in the room, continue and speak so the agent is heard.
         if sip_code == "486" or "busy" in (sip_status or "").lower():
             try:
-                await session_started
-                participant = await asyncio.wait_for(
-                    ctx.wait_for_participant(identity=participant_identity),
-                    timeout=5.0,
-                )
-                logger.info(f"Participant joined despite 486; sending greeting. participant={participant.identity}")
-                await session.generate_reply(
-                    instructions=f"Greet the vendor in hindi, eg. of English: Hello! I am Nikita from Tata Chemicals. Am I speaking with {full_name}?",
-                    allow_interruptions=False,
-                )
-                agent.set_participant(participant)
-                # Start call timeout as in the success path
-                async def call_timeout():
-                    await asyncio.sleep(150)
-                    if not agent.call_outcome_written:
-                        if lead_id:
-                            await update_lead_in_db(
-                                lead_id=lead_id,
-                                connected=True,
-                                recall_requested=True,
-                                agent_summary="Call ended due to 3-minute timeout",
-                                room_id=room_id,
-                                transcript=agent.transcript if agent.transcript else None,
-                            )
-                        agent.call_outcome_written = True
-                        await agent.hangup()
-                asyncio.create_task(call_timeout())
+                # await session_started
+                # participant = await asyncio.wait_for(
+                #     ctx.wait_for_participant(identity=participant_identity),
+                #     timeout=5.0,
+                # )
+                # logger.info(f"Participant joined despite 486; sending greeting. participant={participant.identity}")
+                # await session.generate_reply(
+                #     instructions=f"Greet in Hinglish: Mai Nikita bol rahi hu Tata Chemicals se. Kya main {full_name} ji se baat kar rahi hu? Mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu — chaliye section 16 se shuru karte hain.",
+                #     allow_interruptions=False,
+                # )
+                # agent.set_participant(participant)
+                # # Start call timeout as in the success path
+                # async def call_timeout():
+                #     await asyncio.sleep(150)
+                #     if not agent.call_outcome_written:
+                #         if lead_id:
+                #             await update_lead_in_db(
+                #                 lead_id=lead_id,
+                #                 connected=True,
+                #                 recall_requested=True,
+                #                 agent_summary="Call ended due to 3-minute timeout",
+                #                 room_id=room_id,
+                #                 transcript=agent.transcript if agent.transcript else None,
+                #             )
+                #         agent.call_outcome_written = True
+                #         await agent.hangup()
+                # asyncio.create_task(call_timeout())
                 return
             except (asyncio.TimeoutError, Exception) as fallback_err:
                 logger.warning(f"Could not recover after 486: {fallback_err}")
