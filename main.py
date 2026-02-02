@@ -52,19 +52,99 @@ def get_product_from_json(model_name: str) -> Optional[dict[str, Any]]:
     return None
 
 
-def load_form_from_json() -> dict[str, Any]:
-    """Load merged form definition from form_non_integrated.json (all sections: intake, master data, additional, procurement, accounts)."""
-    json_path = Path(__file__).parent / "form_non_integrated.json"
+def load_supplier_general_info_form_from_json() -> dict[str, Any]:
+    """Load form definition from form_supplier_general_info.json (Supplier General Information and subsections)."""
+    json_path = Path(__file__).parent / "form_supplier_general_info.json"
     with open(json_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def get_all_form_questions(form: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return all questions from all sections in order (Supplier Intake, Master Data, Additional Fields, Procurement, Accounts)."""
-    questions = []
+def get_all_form_questions_from_supplier_form(form: dict[str, Any]) -> list[dict[str, Any]]:
+    """Flatten all questions from Supplier General Information form: section fields (including subfields for address),
+    then each subsection's fields, in order."""
+    questions: list[dict[str, Any]] = []
     for section in form.get("sections", []):
-        questions.extend(section.get("fields", []))
+        parent_number = section.get("number", "")
+        for field in section.get("fields", []):
+            if field.get("subfields"):
+                # Extended address or other composite: emit one question per subfield
+                parent_name = field.get("name", "")
+                parent_form = field.get("formName", "")
+                for sub in field["subfields"]:
+                    q = {
+                        "number": parent_number,
+                        "name": f"{parent_name} — {sub.get('name', '')}",
+                        "description": sub.get("description"),
+                        "required": sub.get("required", False),
+                        "allowedValues": sub.get("allowedValues"),
+                        "formName": f"{parent_form}.{sub.get('formName', '')}" if parent_form else sub.get("formName", ""),
+                        "answerType": sub.get("answerType"),
+                    }
+                    if "user_answer" in sub:
+                        q["user_answer"] = sub["user_answer"]
+                    questions.append(q)
+            else:
+                questions.append(dict(field))
+        for subsection in section.get("subsections", []):
+            for field in subsection.get("fields", []):
+                questions.append(dict(field))
     return questions
+
+
+def get_form_section_status(form: dict[str, Any], all_questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compute per-section status (left / partially filled / complete) from form structure and flat questions list."""
+    sections_status: list[dict[str, Any]] = []
+    idx = 0
+    for section in form.get("sections", []):
+        main_name = section.get("name", "Supplier General Information")
+        count_main = 0
+        for field in section.get("fields", []):
+            if field.get("subfields"):
+                count_main += len(field["subfields"])
+            else:
+                count_main += 1
+        answered_main = sum(
+            1 for i in range(idx, min(idx + count_main, len(all_questions)))
+            if all_questions[i].get("user_answer")
+        )
+        idx += count_main
+        if count_main == 0:
+            status = "left"
+        elif answered_main == 0:
+            status = "left"
+        elif answered_main < count_main:
+            status = "partially filled"
+        else:
+            status = "complete"
+        sections_status.append({
+            "name": main_name,
+            "status": status,
+            "answered": answered_main,
+            "total": count_main,
+        })
+        for subsection in section.get("subsections", []):
+            sub_name = subsection.get("title", subsection.get("number", "Section"))
+            count_sub = len(subsection.get("fields", []))
+            answered_sub = sum(
+                1 for i in range(idx, min(idx + count_sub, len(all_questions)))
+                if all_questions[i].get("user_answer")
+            )
+            idx += count_sub
+            if count_sub == 0:
+                sub_status = "left"
+            elif answered_sub == 0:
+                sub_status = "left"
+            elif answered_sub < count_sub:
+                sub_status = "partially filled"
+            else:
+                sub_status = "complete"
+            sections_status.append({
+                "name": sub_name,
+                "status": sub_status,
+                "answered": answered_sub,
+                "total": count_sub,
+            })
+    return sections_status
 
 
 from get_dealers import get_dealers
@@ -232,28 +312,38 @@ class OutboundCaller(Agent):
                 - Batch: {batch_name or 'N/A'}
             """
         
-        # Load merged form from form_non_integrated.json and get all questions for instructions
-        form = load_form_from_json()
-        all_questions = get_all_form_questions(form)
+        # Load Supplier General Information form and get all questions for instructions
+        form = load_supplier_general_info_form_from_json()
+        all_questions = get_all_form_questions_from_supplier_form(form)
         questions_block_lines = []
-        for q in all_questions[6:]:
+        for q in all_questions:
             num = q.get("number", "")
             name = q.get("name", "")
             desc = q.get("description")
             allowed = q.get("allowedValues")
             req = " (required)" if q.get("required") else ""
-            line = f"- [{num}] {name}{req}"
+            user_answer = q.get("user_answer") if q.get("user_answer") else "Not answered yet"
+            line = f"- [{num}] {name}{req} — User answer: {user_answer}"
             if desc:
                 line += f" — {desc}"
             if allowed:
                 line += f" — Options: {', '.join(str(v) for v in allowed)}"
             questions_block_lines.append(line)
         questions_block = "\n                ".join(questions_block_lines) if questions_block_lines else "(No questions loaded)"
+        # Supplier name from form (16.1 Supplier Name 1) for verification question
+        supplier_name = ""
+        for q in all_questions:
+            if q.get("formName") == "supplierName1" and q.get("user_answer"):
+                supplier_name = (q.get("user_answer") or "").strip()
+                break
+        if not supplier_name:
+            supplier_name = "the registered company"
         logger.info("Form questions loaded for prompt: %d questions", len(all_questions))
+        logger.info("Form questions: %s", questions_block)
         super().__init__(
             instructions=f"""
                 ## IDENTITY
-                You are **Nikita** from **Tata Chemicals**. Voice-only agent helping vendors fill the supplier onboarding form.
+                You are Tata Chemicals ki **AI agent** — an artificial intelligence assistant. You must make it clear to the user that they are speaking with an AI, not a human. Voice-only; you help vendors fill the supplier onboarding form.
                 **LANGUAGE**: Speak in **Hinglish** (mix of Hindi and English). Keep it natural and conversational.
                 Ensure to use the devnagri script for hindi words and roman for english words.
                 Even convert the output of tool calls to devnagri script.
@@ -268,20 +358,27 @@ class OutboundCaller(Agent):
                 You must not put any csv tags in the output.
                 
                 ## OBJECTIVE
-                Help the vendor fill the **Supplier Onboarding** form (all sections: Intake, Master Data, Additional Fields, Procurement, Accounts). Go through each question one by one in the order listed, collect answers in Hinglish, and be professional and helpful.
+                Help the vendor fill the **Supplier General Information** form (main section plus Bank Information, Tax Information, Additional Information, Supporting Documents). Go through each question one by one in the order listed, collect answers in Hinglish, and be professional and helpful.
                 
                 
                 ## OPENING (say this first after confirming you are speaking with the right person)
-                "Namaste, mai Nikita baat kar rahi hu, Tata Chemicals se, aur mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu. Kya aap supplier onboarding form ko bharna chahte ho?"
+                "Namaste, main Tata Chemicals ki AI agent hoon. Mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu."
+                **Always ask:** "Kya main {supplier_name} ki taraf se kisi representative se baat kar rahi hoon?" / "Are you speaking from {supplier_name}?" — wait for yes/no before continuing.
+                "Mai ye dekh paa rahi hu ki kuch sawalon ke jawab fill ho chuke hai, kya aap bache hue sawalo ko complete karne mein meri madat kar sakte ho?"
                 If they say yes/haaan, then move to the questions below. Do not mention any section name when asking the questions.
                 
-                ## FORM QUESTIONS (ask in this order, one at a time — all sections merged)
+                ## FORM QUESTIONS & ANSWERS
                 {questions_block}
                 
                 ## CALL FLOW
-                - Start with the opening line above, then ask questions in the order listed.
+                - Start with the opening line above.
+                - If they say yes/haaan, then move to below steps.
+                - Mention the section names which are left to be answered and ask them which one they want to answer first.
+                - If they choose a section, ask the questions in that section one by one.
+                - If they say kuch bhi/koi bhi chalega, begin with the first question in that section which is not answered yet.
+                - If they have answered some questions, ask the ones that are not answered yet.
                 - One question at a time. After you get an answer, acknowledge briefly and ask the next question.
-                - If they have "List of Choices", offer the options in simple words; they can also answer in their own words if it matches.
+                - If a question has allowed values (Options): when the list is long, mention only 3–4 options when asking; if the user specifically asks for all options (e.g. "sab batao", "poori list"), then mention all. For short lists, you may mention all. They can answer in their own words if it matches.
                 - For optional (non-required) questions, they can say "skip" or "nahi chahiye"; then move to the next.
                 - Keep responses crisp (max 30 words when possible).
                 - When all questions are done, say: "Form complete ho gaya. Dhanyavaad aapke time ke liye. Aapka din accha ho!" then call update_lead_after_call and end_call.
@@ -310,10 +407,11 @@ class OutboundCaller(Agent):
                 
                 ## TOOL CALL BEHAVIOR
                 Do NOT say any waiting phrase before end_call, update_lead_after_call, or submit_form_answers - call them silently.
+                When calling submit_form_answers send the user answers in English, if they are not in English, convert them to English.
                 
                 ## KEY RULES
                 - Be professional, conversational and helpful, not robotic
-                - Focus on filling the full Supplier Onboarding form; use the question list above as the single source of questions (all sections in order)
+                - Focus on filling the full Supplier General Information form; use the question list above as the single source of questions (all sections and subsections in order)
                 - ALWAYS AND ONLY call submit_form_answers with the collected Q&A JSON before end_call (so answers are published to the room)
                 - ALWAYS call update_lead_after_call before end_call
             """
@@ -499,8 +597,8 @@ class OutboundCaller(Agent):
             form_answers_json: A JSON string: array of objects, each with:
                 - number: question number (e.g. "2", "16.1")
                 - name: question label (e.g. "Region", "Supplier Name")
-                - formName: form field name (e.g. "region", "supplierName")
-                - answer: the vendor's answer (string)
+                - fieldId: form field name (e.g. "region", "supplierName")
+                - answer: the vendor's answer (English string)
 
                 Example: [{"number": "2", "name": "Region", "formName": "region", "answer": "Mithapur"}, {"number": "16.1", "name": "Supplier Name", "formName": "supplierName", "answer": "ABC Corp"}]
 
@@ -674,9 +772,12 @@ async def entrypoint(ctx: JobContext):
     agent.room = ctx.room  # for publishing transcript to LiveKit
 
     # the following uses GPT-4o, Deepgram and Cartesia
+    # VAD is required for responsive barge-in: it detects "user started speaking" from audio
+    # so the framework can stop the agent (allow_interruptions=True). Without VAD, interruption
+    # handling would rely only on STT and be slower.
     session = AgentSession(
         # turn_detection=MultilingualModel(),  # Temporarily disabled - requires model download
-        # Use VAD-based turn detection instead (simpler, no model files needed)
+        # Use VAD-based turn detection (VAD + allow_interruptions = barge-in)
         vad=silero.VAD.load(
             activation_threshold=0.9,      # Lower = more sensitive (default: 0.5)
             min_speech_duration=1,      # Min speech duration to trigger (default: 0.05s)
@@ -685,13 +786,16 @@ async def entrypoint(ctx: JobContext):
         stt=sarvam.STT(model = 'saarika:v2.5', language='hi-IN'),
         # stt=deepgram.STT(language='en'),
         # you can also use OpenAI's TTS with openai.TTS()
-        tts=cartesia.TTS(model ='sonic-2',voice='56e35e2d-6eb6-4226-ab8b-9776515a7094',language='hi'),
+        tts=cartesia.TTS(model ='sonic-2',voice='95d51f79-c397-46f9-b49a-23763d3eaa2d',language='hi'),
         # tts=cartesia.TTS(language='en'),
         # llm=aws.LLM(model="anthropic.claude-3-haiku-20240307-v1:0"),
         llm=openai.LLM(model="gpt-5.2"),
         # you can also use a speech-to-speech model like OpenAI's Realtime API
         # llm=openai.realtime.RealtimeModel()
-        allow_interruptions=False,
+        allow_interruptions=False,  # Agent stops when user speaks (uses VAD to detect user speech)
+        # Wait time before agent starts speaking (after user stops):
+        # min_endpointing_delay=0.5,   # Seconds to wait before considering user turn complete (default 0.5). Lower = agent responds sooner.
+        # max_endpointing_delay=3.0,  # Max wait when turn detector thinks user might continue (default 3.0). Only used with turn_detection model.
     )
 
     # Register cleanup handler for when session ends (handles unexpected disconnects)
@@ -818,7 +922,7 @@ async def entrypoint(ctx: JobContext):
         await session_started
         participant = await ctx.wait_for_participant(identity=participant_identity)
         await session.generate_reply(
-            instructions=f"Greet in Hinglish: Namaste, Mai Nikita bol rahi hu Tata Chemicals se. Mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu — Kya aao supplier onboarding form ko bharna chahte ho?",
+            instructions=f"Greet in Hinglish: Namaste, main Tata Chemicals ki AI agent hoon. Mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu.",
             allow_interruptions=False
         )
         logger.info(f"participant joined: {participant.identity}")
@@ -901,6 +1005,6 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="tcpl-tatachem-v2v-agent",
+            agent_name="tatachem-v2v-agent",
         )
     )

@@ -52,11 +52,20 @@ def _get_livekit_api_url() -> str:
 async def get_or_create_sip_trunk() -> Optional[str]:
     """
     Get existing SIP outbound trunk ID or create a new one.
+    Prefers SIP_OUTBOUND_TRUNK_ID from env if set; otherwise picks a trunk by SIP_TRUNK_NAME
+    (so the caller number matches your config), then falls back to the first trunk.
     
     Returns:
         trunk_id if found/created, None on failure
     """
     global _cached_trunk_id
+    
+    # Prefer explicit trunk ID from env (so you can pin to a specific caller number)
+    env_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID", "").strip()
+    if env_trunk_id:
+        logger.info(f"Using SIP trunk from env: {env_trunk_id}")
+        _cached_trunk_id = env_trunk_id
+        return env_trunk_id
     
     # Return cached trunk ID if available
     if _cached_trunk_id:
@@ -77,8 +86,38 @@ async def get_or_create_sip_trunk() -> Optional[str]:
         
         # Check if any trunks exist
         if response.items:
+            # Prefer trunk whose name matches SIP_TRUNK_NAME (so caller number matches your .env)
+            if SIP_TRUNK_NAME:
+                for item in response.items:
+                    item_name = getattr(item, "name", None)
+                    if item_name is None and hasattr(item, "trunk"):
+                        item_name = getattr(item.trunk, "name", None)
+                    if isinstance(item_name, str) and item_name.strip() == SIP_TRUNK_NAME.strip():
+                        trunk_id = item.sip_trunk_id
+                        logger.info(f"Using SIP trunk matching name '{SIP_TRUNK_NAME}': {trunk_id}")
+                        _cached_trunk_id = trunk_id
+                        return trunk_id
+            # No matching trunk but SIP_TRUNK_* is set: create one with your number so calls use it
+            if all([SIP_TRUNK_ADDRESS, SIP_TRUNK_AUTH_USERNAME, SIP_TRUNK_AUTH_PASSWORD]) and SIP_TRUNK_NUMBERS:
+                logger.info(f"No trunk named '{SIP_TRUNK_NAME}', creating one with configured numbers...")
+                trunk_info = SIPOutboundTrunkInfo(
+                    name=SIP_TRUNK_NAME,
+                    address=SIP_TRUNK_ADDRESS,
+                    numbers=[n.strip() for n in SIP_TRUNK_NUMBERS if n.strip()],
+                    auth_username=SIP_TRUNK_AUTH_USERNAME,
+                    auth_password=SIP_TRUNK_AUTH_PASSWORD,
+                    destination_country=SIP_TRUNK_DESTINATION_COUNTRY,
+                    transport=1,
+                )
+                create_request = CreateSIPOutboundTrunkRequest(trunk=trunk_info)
+                created_trunk = await lk_api.sip.create_outbound_trunk(create_request)
+                trunk_id = created_trunk.sip_trunk_id
+                logger.info(f"Created and using SIP trunk '{SIP_TRUNK_NAME}': {trunk_id}")
+                _cached_trunk_id = trunk_id
+                return trunk_id
+            # Fallback: use first trunk (previous behavior)
             trunk_id = response.items[0].sip_trunk_id
-            logger.info(f"Found existing SIP trunk: {trunk_id}")
+            logger.info(f"Using first existing SIP trunk: {trunk_id}")
             _cached_trunk_id = trunk_id
             return trunk_id
         
