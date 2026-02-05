@@ -1,0 +1,1982 @@
+{
+  "title": "Supplier Onboarding — Full Form (Integrated + Additional)",
+  "sections": [
+    {
+      "id": "supplier-intake",
+      "number": "1",
+      "name": "Supplier Intake",
+      "fields": [
+        {
+          "number": "2",
+          "type": "Question",
+          "name": "Region (Please select only one location where you are going to send materials or provide services from the ...)",
+          "description": "Please select one Region from Mithapur, Ahmedabad, Mumbai, Pune, Mambattu, Cuddalore",
+          "answerType": "Region",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "Mithapur",
+            "Ahmedabad",
+            "Mumbai",
+            "Pune",
+            "Mambattu",
+            "Cuddalore",
+            "Other"
+          ],
+          "formName": "region",
+          "required": true,
+          "user_answer": "Mumbai"
+        },
+        {
+          "number": "4",
+          "type": "Question",
+          "name": "Reason for New Supplier Onboarding",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "reasonNewOnboarding",
+          "required": true,
+          "user_answer": "New vendor for raw materials supply"
+        },
+        {
+          "number": "5",
+          "type": "Question",
+          "name": "Business Unit Type",
+          "description": null,
+          "answerType": "Department",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "businessUnitType",
+          "required": true,
+          "user_answer": "Procurement"
+        },
+        {
+          "number": "12",
+          "type": "Question",
+          "name": "Vendor Type",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "[S] Supplier",
+            "[C] Service Provider",
+            "[T] Logistic Service Provider",
+            "[E] Expense Parties",
+            "[G] Government Agencies",
+            "[F] Foreign Vendor",
+            "[A] Sundry Advances",
+            "[B] ICDs Borrowed",
+            "[L] Deposits Placed - Public Bodies",
+            "[M] Deposits Placed - Others",
+            "[P] Commercial Papers Issued",
+            "[K] Plant as vendor",
+            "[W] Working Capital Demand Loan",
+            "[X] Others for G/L account Transactions"
+          ],
+          "formName": "vendorType",
+          "required": true,
+          "user_answer": "[S]Supplier"
+        },
+        {
+          "number": "13",
+          "type": "Question",
+          "name": "Supplier Registration is done by?",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "Supplier",
+            "Internal User (On behalf of supplier)"
+          ],
+          "formName": "registrationDoneBy",
+          "required": true,
+          "user_answer": "Supplier"
+        },
+        {
+          "number": "14",
+          "type": "Question",
+          "name": "Maximum Order Value",
+          "description": null,
+          "answerType": "Whole Number",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "maxOrderValue",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "supplier-master-data",
+      "number": "2",
+      "name": "Supplier Master Data (16 / 17 / 18)",
+      "fields": [
+        {
+          "number": "16.1",
+          "type": "Question",
+          "name": "Supplier Name",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "supplierName",
+          "required": true,
+          "user_answer": "ABC Industries Pvt Ltd"
+        },
+        {
+          "number": "16.2",
+          "type": "Question",
+          "name": "Supplier Name 2",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "supplierName2",
+          "required": false,
+          "user_answer": "ABC Industries"
+        },
+        {
+          "number": "16.3",
+          "type": "Question",
+          "name": "Legal Supplier Name (As per GST Certificate)",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "legalSupplierName",
+          "required": true,
+          "user_answer": "ABC Industries Private Limited"
+        },
+        {
+          "number": "16.4",
+          "type": "Question",
+          "name": "Parent Group Name",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "parentGroupName",
+          "required": false
+        },
+        {
+          "number": "16.5",
+          "type": "Question",
+          "name": "Primary Supplier Contact First Name",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "primaryFirstName",
+          "required": true
+        },
+        {
+          "number": "16.6",
+          "type": "Question",
+          "name": "Primary Supplier Contact Last Name",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "primaryLastName",
+          "required": true
+        },
+        {
+          "number": "16.7",
+          "type": "Question",
+          "name": "Primary Contact Mobile No.",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "primaryMobile",
+          "required": true
+        },
+        {
+          "number": "16.8",
+          "type": "Question",
+          "name": "Primary Contact Email",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "primaryEmail",
+          "required": true
+        },
+        {
+          "number": "16.15",
+          "type": "Question",
+          "name": "Supplier Address (As per GST Certificate)",
+          "description": null,
+          "answerType": "Extended Address",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "supplierAddressGst",
+          "required": true
+        },
+        {
+          "number": "16.16",
+          "type": "Question",
+          "name": "Vendor Category (Supplier)",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "Mechanical",
+            "Electrical",
+            "Instrumentation",
+            "Civil",
+            "Chemical",
+            "Packaging",
+            "Raw Material",
+            "General Items",
+            "Equipments",
+            "Professional Services",
+            "Maintenance Services",
+            "Construction Services",
+            "Manpower Services",
+            "Medical Services",
+            "Security Services",
+            "Production support services",
+            "Facility Management Services",
+            "EHS Services",
+            "Inspection Services",
+            "Engineering Services",
+            "Material Handling Services",
+            "Calibration & Testing Services",
+            "Courier & Travel Services",
+            "Equipment & Vehicle provider",
+            "Transporters",
+            "Warehousing Services",
+            "CHA Handling Service",
+            "Freight Forwarders",
+            "Shipping Lines",
+            "Hotels",
+            "General items",
+            "Travel",
+            "CSR Activities",
+            "Event Management",
+            "Local",
+            "State",
+            "Central",
+            "Port",
+            "Taxation",
+            "Others"
+          ],
+          "formName": "vendorCategory",
+          "required": true
+        },
+        {
+          "number": "16.23",
+          "type": "Question",
+          "name": "Vendor Classification",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "Fabricator",
+            "Authorized Distributor / Dealer",
+            "Manufacturer",
+            "Trader",
+            "Service Provider",
+            "Professional Services",
+            "Government Vendor",
+            "Logistics Service Provider",
+            "Others"
+          ],
+          "formName": "vendorClassification",
+          "required": false
+        },
+        {
+          "number": "16.26.1",
+          "type": "Question",
+          "name": "Bank Country",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "[IN] India",
+            "[US] United States",
+            "[GB] United Kingdom",
+            "[KE] Kenya",
+            "[AO] Angola",
+            "[AI] Anguilla",
+            "[AQ] Antarctica",
+            "[AF] Afghanistan",
+            "[AX] Aland Islands",
+            "[AW] Aruba",
+            "[AM] Armenia",
+            "[AR] Argentina",
+            "[AG] Antigua and Barbuda",
+            "[AI] Anguilla",
+            "[AL] Albania",
+            "[DZ] Algeria",
+            "[AS] American Samoa",
+            "[AD] Andorra",
+            "[AU] Australia",
+            "[AT] Austria",
+            "[AZ] Azerbaijan",
+            "[BS] Bahamas",
+            "[BH] Bahrain",
+            "[BD] Bangladesh",
+            "[BB] Barbados",
+            "[BY] Belarus",
+            "[BE] Belgium",
+            "[BZ] Belize",
+            "[BJ] Benin",
+            "[BM] Bermuda",
+            "[BT] Bhutan",
+            "[BO] Bolivia",
+            "[BQ] Bonaire Sint Eustatius and Saba",
+            "[BA] Bosnia and Herzegovina",
+            "[BW] Botswana",
+            "[BV] Bouvet Island",
+            "[BR] Brazil",
+            "[IO] British Indian Ocean Territory",
+            "[BN] Brunei Darussalam",
+            "[BG] Bulgaria",
+            "[BF] Burkina Faso",
+            "[BI] Burundi",
+            "[KH] Cambodia",
+            "[CM] Cameroon",
+            "[CA] Canada",
+            "[IC] Canary Islands",
+            "[CV] Cape Verde",
+            "[KY] Cayman Islands",
+            "[CF] Central African Republic",
+            "[TD] Chad",
+            "[CL] Chile",
+            "[CN] China",
+            "[CX] Christmas Island",
+            "[CC] Cocos (Keeling) Islands",
+            "[CO] Colombia",
+            "[KM] Comoros",
+            "[CG] Congo",
+            "[CD] Congo, the Democratic Republic of the",
+            "[CK] Cook Islands",
+            "[CR] Costa Rica",
+            "[CI] Cote d'Ivoire",
+            "[CW] Country of Curacao",
+            "[HR] Croatia",
+            "[CY] Cyprus",
+            "[CZ] Czech Republic",
+            "[DK] Denmark",
+            "[DJ] Djibouti",
+            "[DM] Dominica",
+            "[DO] Dominican Republic",
+            "[EC] Ecuador",
+            "[EG] Egypt",
+            "[SV] El Salvador",
+            "[GQ] Equatorial Guinea",
+            "[ER] Eritrea",
+            "[EE] Estonia",
+            "[ET] Ethiopia",
+            "[FK] Falkland Islands (Malvinas)",
+            "[FO] Faroe Islands",
+            "[FM] Federated States of Micronesia",
+            "[FJ] Fiji",
+            "[FI] Finland",
+            "[FR] France",
+            "[GF] French Guiana",
+            "[PF] French Polynesia",
+            "[TF] French Southern Territories",
+            "[GA] Gabon",
+            "[GM] Gambia",
+            "[GE] Georgia",
+            "[DE] Germany",
+            "[GH] Ghana",
+            "[GI] Gibraltar",
+            "[GR] Greece",
+            "[GL] Greenland",
+            "[GD] Grenada",
+            "[GP] Guadeloupe",
+            "[GU] Guam",
+            "[GT] Guatemala",
+            "[GG] Guernsey",
+            "[GN] Guinea",
+            "[GW] Guinea-Bissau",
+            "[GY] Guyana",
+            "[HT] Haiti",
+            "[HM] Heard Island and McDonald Islands",
+            "[HN] Honduras",
+            "[HK] Hong Kong",
+            "[HU] Hungary",
+            "[IS] Iceland",
+            "[ID] Indonesia",
+            "[IQ] Iraq",
+            "[IE] Ireland",
+            "[IM] Isle of Man",
+            "[IL] Israel",
+            "[IT] Italy",
+            "[JM] Jamaica",
+            "[JP] Japan",
+            "[JE] Jersey",
+            "[JO] Jordan",
+            "[KZ] Kazakhstan",
+            "[KI] Kiribati",
+            "[XK] Kosovo",
+            "[KW] Kuwait",
+            "[KG] Kyrgyzstan",
+            "[LA] Lao People's Democratic Republic",
+            "[LV] Latvia",
+            "[LB] Lebanon",
+            "[LS] Lesotho",
+            "[LR] Liberia",
+            "[LY] Libyan Arab Jamahiriya",
+            "[LI] Liechtenstein",
+            "[LT] Lithuania",
+            "[LU] Luxembourg",
+            "[MO] Macao",
+            "[MG] Madagascar",
+            "[MW] Malawi",
+            "[MY] Malaysia",
+            "[MV] Maldives",
+            "[ML] Mali",
+            "[MT] Malta",
+            "[MH] Marshall Islands",
+            "[MQ] Martinique",
+            "[MR] Mauritania",
+            "[MU] Mauritius",
+            "[YT] Mayotte",
+            "[MX] Mexico",
+            "[MD] Moldova",
+            "[MC] Monaco",
+            "[MN] Mongolia",
+            "[ME] Montenegro",
+            "[MS] Montserrat",
+            "[MA] Morocco",
+            "[MZ] Mozambique",
+            "[MM] Myanmar",
+            "[NA] Namibia",
+            "[NR] Nauru",
+            "[NP] Nepal",
+            "[NL] Netherlands",
+            "[AN] Netherlands Antilles",
+            "[NC] New Caledonia",
+            "[NZ] New Zealand",
+            "[NI] Nicaragua",
+            "[NE] Niger",
+            "[NG] Nigeria",
+            "[NU] Niue",
+            "[NF] Norfolk Island",
+            "[MK] North Macedonia",
+            "[MP] Northern Mariana Islands",
+            "[NO] Norway",
+            "[OM] Oman",
+            "[PK] Pakistan",
+            "[PW] Palau",
+            "[PS] Palestinian Territory, Occupied",
+            "[PA] Panama",
+            "[PG] Papua New Guinea",
+            "[PY] Paraguay",
+            "[PE] Peru",
+            "[PH] Philippines",
+            "[PN] Pitcairn",
+            "[PL] Poland",
+            "[PT] Portugal",
+            "[PR] Puerto Rico",
+            "[QA] Qatar",
+            "[RE] Reunion",
+            "[RO] Romania",
+            "[RU] Russian Federation",
+            "[RW] Rwanda",
+            "[BL] Saint Barthelemy",
+            "[SH] Saint Helena",
+            "[KN] Saint Kitts and Nevis",
+            "[LC] Saint Lucia",
+            "[MF] Saint Martin",
+            "[PM] Saint Pierre and Miquelon",
+            "[VC] Saint Vincent and the Grenadines",
+            "[WS] Samoa",
+            "[SM] San Marino",
+            "[ST] Sao Tome and Principe",
+            "[SA] Saudi Arabia",
+            "[SN] Senegal",
+            "[RS] Serbia",
+            "[SC] Seychelles",
+            "[SL] Sierra Leone",
+            "[SG] Singapore",
+            "[SX] Sint Maarten",
+            "[SK] Slovakia",
+            "[SI] Slovenia",
+            "[SB] Solomon Islands",
+            "[SO] Somalia",
+            "[ZA] South Africa",
+            "[KR] South Korea",
+            "[SS] South Sudan",
+            "[ES] Spain",
+            "[LK] Sri Lanka",
+            "[SD] Sudan",
+            "[SR] Suriname",
+            "[SJ] Svalbard and Jan Mayen Islands",
+            "[SZ] Swaziland",
+            "[SE] Sweden",
+            "[CH] Switzerland",
+            "[TW] Taiwan",
+            "[TJ] Tajikistan",
+            "[TZ] Tanzania",
+            "[TH] Thailand",
+            "[TL] Timor-Leste",
+            "[TG] Togo",
+            "[TK] Tokelau",
+            "[TO] Tonga",
+            "[TT] Trinidad and Tobago",
+            "[TN] Tunisia",
+            "[TM] Turkmenistan",
+            "[TC] Turks and Caicos Islands",
+            "[TV] Tuvalu",
+            "[UG] Uganda",
+            "[UA] Ukraine",
+            "[AE] United Arab Emirates",
+            "[UM] United States Minor Outlying Islands",
+            "[UY] Uruguay",
+            "[UZ] Uzbekistan",
+            "[VU] Vanuatu",
+            "[VA] Vatican City State (Holy See)",
+            "[VE] Venezuela",
+            "[VN] Viet Nam",
+            "[VG] Virgin Islands (British)",
+            "[VI] Virgin Islands (U.S.)",
+            "[WF] Wallis and Futuna Islands",
+            "[EH] Western Sahara",
+            "[YE] Yemen",
+            "[ZM] Zambia",
+            "[ZW] Zimbabwe"
+          ],
+          "formName": "bankCountry",
+          "required": true
+        },
+        {
+          "number": "16.26.2",
+          "type": "Question",
+          "name": "Bank Name",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "bankName",
+          "required": true
+        },
+        {
+          "number": "16.26.3",
+          "type": "Question",
+          "name": "Bank Branch Name",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "bankBranchName",
+          "required": false
+        },
+        {
+          "number": "16.26.4",
+          "type": "Question",
+          "name": "Account Holder",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "accountHolderName",
+          "required": true
+        },
+        {
+          "number": "16.26.5",
+          "type": "Question",
+          "name": "Bank Account Number",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "bankAccountNumber",
+          "required": true
+        },
+        {
+          "number": "16.26.6",
+          "type": "Question",
+          "name": "Bank Key (IFSC Code)",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "ifsc",
+          "required": false
+        },
+        {
+          "number": "16.26.7",
+          "type": "Question",
+          "name": "IBAN Code / SWIFT Code",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "ibanSwift",
+          "required": false
+        },
+        {
+          "number": "16.26.9",
+          "type": "Question",
+          "name": "Bank Postal Code",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "bankPostalCode",
+          "required": false
+        },
+        {
+          "number": "16.26.10",
+          "type": "Question",
+          "name": "State",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "[AP] Andhra Pradesh",
+            "[AR] Arunachal Pradesh",
+            "[AS] Assam",
+            "[BR] Bihar",
+            "[CH] Chandigarh",
+            "[CT] Chhattisgarh",
+            "[DH] DadraNagHavDamanDiu",
+            "[DL] Delhi",
+            "[GA] Goa",
+            "[GJ] Gujarat",
+            "[HP] Himachal Pradesh",
+            "[HR] Haryana",
+            "[JH] Jharkhand",
+            "[JK] Jammu and Kashmir",
+            "[KA] Karnataka",
+            "[KL] Kerala",
+            "[LA] Ladakh",
+            "[LD] Lakshadweep",
+            "[MH] Maharashtra",
+            "[ML] Meghalaya",
+            "[MN] Manipur",
+            "[MP] Madhya Pradesh",
+            "[MZ] Mizoram",
+            "[NL] Nagaland",
+            "[OR] Orissa",
+            "[PB] Punjab",
+            "[PY] Pondicherry",
+            "[RJ] Rajasthan",
+            "[SK] Sikkim",
+            "[TG] Telangana",
+            "[TN] Tamil Nadu",
+            "[TR] Tripura",
+            "[UP] Uttar Pradesh",
+            "[UT] Uttarakhand",
+            "[WB] West Bengal"
+          ],
+          "formName": "bankState",
+          "required": false
+        },
+        {
+          "number": "16.26.11",
+          "type": "Question",
+          "name": "Bank Id",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "[10] Saving",
+            "[11] Current",
+            "[13] Cash / Credit"
+          ],
+          "formName": "bankId",
+          "required": false
+        },
+        {
+          "number": "16.27.1",
+          "type": "Question",
+          "name": "Constitution Business (Company Type)",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "Private Limited Company",
+            "Public Limited Company",
+            "Partnership",
+            "Proprietorship",
+            "Hindu Undivided Family",
+            "Society/Club/Trust/Association of Persons(AOP)",
+            "Government Department",
+            "Public Sector Undertaking",
+            "Unlimited Company",
+            "LLP",
+            "Local Authority",
+            "Statutory Body",
+            "Others"
+          ],
+          "formName": "companyType",
+          "required": true
+        },
+        {
+          "number": "16.27.2",
+          "type": "Question",
+          "name": "Proprietor Category: Please select Owner / proprietor / partner belongs to which category",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "[SCT] SC/ST",
+            "[OBC] OBC",
+            "[GNL] General",
+            "[PWD] Person with Disabilities (PWD)",
+            "[WLB] Women-led business",
+            "[DND] Do not wish to declare"
+          ],
+          "formName": "proprietorCategory",
+          "required": false
+        },
+        {
+          "number": "16.27.3",
+          "type": "Question",
+          "name": "Descriptions of Material/Services for tax identification purpose",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "materialServiceDesc",
+          "required": true
+        },
+        {
+          "number": "16.27.6.1",
+          "type": "Question",
+          "name": "GST Vendor Class",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "GST Registered",
+            "[0]Non-Registered"
+          ],
+          "formName": "gstVendorClass",
+          "required": false
+        },
+        {
+          "number": "16.27.6.2",
+          "type": "Question",
+          "name": "GST No.",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "gstNo",
+          "required": true
+        },
+        {
+          "number": "16.27.6.3",
+          "type": "Question",
+          "name": "State of GST Certificate",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "[AP] Andhra Pradesh",
+            "[AR] Arunachal Pradesh",
+            "[AS] Assam",
+            "[BR] Bihar",
+            "[CH] Chandigarh",
+            "[CT] Chhattisgarh",
+            "[DH] DadraNagHavDamanDiu",
+            "[DL] Delhi",
+            "[GA] Goa",
+            "[GJ] Gujarat",
+            "[HP] Himachal Pradesh",
+            "[HR] Haryana",
+            "[JH] Jharkhand",
+            "[JK] Jammu and Kashmir",
+            "[KA] Karnataka",
+            "[KL] Kerala",
+            "[LA] Ladakh",
+            "[LD] Lakshadweep",
+            "[MH] Maharashtra",
+            "[ML] Meghalaya",
+            "[MN] Manipur",
+            "[MP] Madhya Pradesh",
+            "[MZ] Mizoram",
+            "[NL] Nagaland",
+            "[OR] Orissa",
+            "[PB] Punjab",
+            "[PY] Pondicherry",
+            "[RJ] Rajasthan",
+            "[SK] Sikkim",
+            "[TG] Telangana",
+            "[TN] Tamil Nadu",
+            "[TR] Tripura",
+            "[UP] Uttar Pradesh",
+            "[UT] Uttarakhand",
+            "[WB] West Bengal"
+          ],
+          "formName": "gstState",
+          "required": false
+        },
+        {
+          "number": "16.27.6.4",
+          "type": "Question",
+          "name": "Is Supplier Eligible for RCM?",
+          "description": null,
+          "answerType": "Text (single line)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "YES",
+            "NO"
+          ],
+          "formName": "rcmEligible",
+          "required": true
+        },
+        {
+          "number": "16.27.7.2",
+          "type": "Question",
+          "name": "PAN No.",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "panNo",
+          "required": true
+        },
+        {
+          "number": "16.28.1",
+          "type": "Question",
+          "name": "Type Of Industry",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "List of Choices",
+          "allowedValues": [
+            "[MEDIUM]Medium",
+            "[MICRO]Micro",
+            "[SMALL]Small",
+            "Non SSI Unit"
+          ],
+          "formName": "industryType",
+          "required": false
+        },
+        {
+          "number": "16.28.7",
+          "type": "Question",
+          "name": "CIN No.",
+          "description": null,
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "cinNo",
+          "required": false
+        },
+        {
+          "number": "17.1",
+          "type": "Question",
+          "name": "Supplier Name",
+          "description": "Repeat / confirmation",
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "supplierName17",
+          "required": false
+        },
+        {
+          "number": "18.5",
+          "type": "Question",
+          "name": "Primary Contact Email",
+          "description": "Repeat / confirmation",
+          "answerType": "Text (single line limited)",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "primaryEmail18",
+          "required": false
+        },
+        {
+          "number": "17.10.5",
+          "type": "Question",
+          "name": "Section 206AB supporting documents (Kindly download the doc & reupload with signoff)",
+          "description": null,
+          "answerType": "Attachment",
+          "acceptableValues": "Any Value",
+          "allowedValues": null,
+          "formName": "doc206ab",
+          "required": false
+        }
+      ]
+    },
+    {
+      "id": "additional-supplier-fields",
+      "number": "3",
+      "name": "Additional Supplier Fields",
+      "subsections": [
+        {
+          "number": "3",
+          "title": "General",
+          "fields": [
+            {
+              "number": "3",
+              "type": "Question",
+              "name": "Legacy Supplier",
+              "description": "Single-line text (limited).",
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "legacySupplier",
+              "required": false
+            }
+          ]
+        },
+        {
+          "number": "15",
+          "title": "Code of Conduct & Compliance",
+          "fields": [
+            {
+              "number": "15.1",
+              "type": "Question",
+              "name": "Upload signed copy of Accepted Supplier Code of Conduct Declaration",
+              "description": "Reference file: Responsible Value Chain Partner Code of Conduct.pdf",
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "cocDeclarationUpload",
+              "required": true
+            },
+            {
+              "number": "15.2",
+              "type": "Question",
+              "name": "Acknowledgement: report any supplier code of conduct violations to the principal ethics counsellor",
+              "description": null,
+              "answerType": "dropdown",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Agree"
+              ],
+              "formName": "cocAcknowledge",
+              "required": true
+            }
+          ]
+        },
+        {
+          "number": "16.9",
+          "title": "Additional Contacts (Supplier & Contact 3)",
+          "fields": [
+            {
+              "number": "16.9",
+              "type": "Question",
+              "name": "Supplier Contact Name",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "contact1Name",
+              "required": false
+            },
+            {
+              "number": "16.10",
+              "type": "Question",
+              "name": "Supplier Contact Mobile No.",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Phone number validation",
+              "allowedValues": null,
+              "formName": "contact1Mobile",
+              "required": false
+            },
+            {
+              "number": "16.11",
+              "type": "Question",
+              "name": "Supplier Contact Email",
+              "description": null,
+              "answerType": "Email",
+              "acceptableValues": "Email validation",
+              "allowedValues": null,
+              "formName": "contact1Email",
+              "required": false
+            },
+            {
+              "number": "16.12",
+              "type": "Question",
+              "name": "Supplier Contact 3",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "contact3Name",
+              "required": false
+            },
+            {
+              "number": "16.13",
+              "type": "Question",
+              "name": "Contact 3 Mobile No.",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Phone number validation",
+              "allowedValues": null,
+              "formName": "contact3Mobile",
+              "required": false
+            },
+            {
+              "number": "16.14",
+              "type": "Question",
+              "name": "Contact 3 Email",
+              "description": null,
+              "answerType": "Email",
+              "acceptableValues": "Email validation",
+              "allowedValues": null,
+              "formName": "contact3Email",
+              "required": false
+            }
+          ]
+        },
+        {
+          "number": "16.17",
+          "title": "Vendor Category & Audit",
+          "fields": [
+            {
+              "number": "16.17",
+              "type": "Question",
+              "name": "Other Category Description",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "otherCategoryDescription",
+              "required": true
+            },
+            {
+              "number": "16.24",
+              "type": "Question",
+              "name": "Willing to participate in TCL Audit?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "tclAudit",
+              "required": true
+            },
+            {
+              "number": "16.25",
+              "type": "Question",
+              "name": "Authorization dealer/distributor Certificate Details",
+              "description": "If you need structured certificate fields (issuer, expiry, cert #), capture them separately.",
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "authDealerCertificate",
+              "required": true
+            }
+          ]
+        },
+        {
+          "number": "16.26",
+          "title": "Bank Information (Additional)",
+          "fields": [
+            {
+              "number": "16.26.8",
+              "type": "Question",
+              "name": "Bank City",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "bankCity",
+              "required": true
+            },
+            {
+              "number": "16.26.12",
+              "type": "Question",
+              "name": "Are you updating bank data?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "updatingBankData",
+              "required": true
+            }
+          ]
+        },
+        {
+          "number": "16.27",
+          "title": "Tax & Incorporation",
+          "fields": [
+            {
+              "number": "16.27.4",
+              "type": "Question",
+              "name": "Date Of Incorporation",
+              "description": null,
+              "answerType": "Date (YYYY-MM-DD)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "incorporationDate",
+              "required": false
+            },
+            {
+              "number": "16.27.5",
+              "type": "Question",
+              "name": "E-Invoice QR Code Applicable?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "eInvoiceQrApplicable",
+              "required": true
+            },
+            {
+              "number": "16.27.7.1",
+              "type": "Question",
+              "name": "Is PAN available?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "panAvailable",
+              "required": true
+            },
+            {
+              "number": "16.27.7.3",
+              "type": "Question",
+              "name": "Reason for No PAN",
+              "description": "Shown when PAN available is No.",
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "noPanReason",
+              "required": false
+            }
+          ]
+        },
+        {
+          "number": "16.28",
+          "title": "MSME Information",
+          "fields": [
+            {
+              "number": "16.28.4",
+              "type": "Question",
+              "name": "UDYAM Number",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "udyamNumber",
+              "required": true
+            },
+            {
+              "number": "16.28.5",
+              "type": "Question",
+              "name": "Provide MSME Certificate",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "msmeCertificateUpload",
+              "required": true
+            },
+            {
+              "number": "16.28.6",
+              "type": "Question",
+              "name": "MSME certificate valid From",
+              "description": null,
+              "answerType": "Date (YYYY-MM-DD)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "msmeValidFrom",
+              "required": false
+            }
+          ]
+        },
+        {
+          "number": "16.29",
+          "title": "Supporting Documents",
+          "fields": [
+            {
+              "number": "16.29.1",
+              "type": "Question",
+              "name": "GST Certificate",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "gstCertificate",
+              "required": true
+            },
+            {
+              "number": "16.29.2",
+              "type": "Question",
+              "name": "If Non-GST Registered: declaration certificate",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "nonGstDeclaration",
+              "required": true
+            },
+            {
+              "number": "16.29.3",
+              "type": "Question",
+              "name": "PAN Card",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "panCardUpload",
+              "required": true
+            },
+            {
+              "number": "16.29.4",
+              "type": "Question",
+              "name": "Bank Cancelled Cheque",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "cancelledCheque",
+              "required": true
+            },
+            {
+              "number": "16.29.5",
+              "type": "Question",
+              "name": "Updated Bank Cancelled Cheque",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "updatedCancelledCheque",
+              "required": true
+            },
+            {
+              "number": "16.29.6",
+              "type": "Question",
+              "name": "Bank Mandate Letter",
+              "description": "Reference: MANDATE FOR RTGS - NEFT.doc",
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "bankMandateLetter",
+              "required": true
+            },
+            {
+              "number": "16.29.7",
+              "type": "Question",
+              "name": "Registration/Partnership Deed/Address proof (letterhead or past invoice)",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "firmRegistrationProof",
+              "required": false
+            },
+            {
+              "number": "16.29.8",
+              "type": "Question",
+              "name": "Quotation (Tax Identification Purpose)",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "quotationTaxId",
+              "required": true
+            },
+            {
+              "number": "16.29.9",
+              "type": "Question",
+              "name": "Product catalogue",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "productCatalogue",
+              "required": false
+            },
+            {
+              "number": "16.29.10",
+              "type": "Question",
+              "name": "Supplier Company Profile",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "companyProfile",
+              "required": false
+            },
+            {
+              "number": "16.29.11",
+              "type": "Question",
+              "name": "IT Returns acknowledgement (last 03 years)",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "itReturns3yrs",
+              "required": false
+            },
+            {
+              "number": "16.29.12",
+              "type": "Question",
+              "name": "Add additional supporting documents?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "addSupportingDocs",
+              "required": true
+            },
+            {
+              "number": "16.29.13",
+              "type": "Question",
+              "name": "Supporting document 1",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "supportDoc1",
+              "required": false
+            },
+            {
+              "number": "16.29.14",
+              "type": "Question",
+              "name": "Supporting document 2",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "supportDoc2",
+              "required": false
+            },
+            {
+              "number": "16.29.15",
+              "type": "Question",
+              "name": "Supporting document 3",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "supportDoc3",
+              "required": false
+            },
+            {
+              "number": "16.29.16",
+              "type": "Question",
+              "name": "Description of attached supporting document",
+              "description": "Required when Add additional supporting documents is Yes.",
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "supportDocsDesc",
+              "required": false
+            }
+          ]
+        },
+        {
+          "number": "16.30",
+          "title": "Business & Legal Declarations",
+          "fields": [
+            {
+              "number": "16.30.1",
+              "type": "Question",
+              "name": "Business under any other names?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "otherBusinessNames",
+              "required": true
+            },
+            {
+              "number": "16.30.2",
+              "type": "Question",
+              "name": "If yes, mention details (other business names)",
+              "description": "Shown when Business under any other names is Yes.",
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "otherBusinessNamesDetails",
+              "required": false
+            },
+            {
+              "number": "16.30.3",
+              "type": "Question",
+              "name": "Done business with Tata Chemicals under any other name in the past?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "tataOtherNamePast",
+              "required": true
+            },
+            {
+              "number": "16.30.4",
+              "type": "Question",
+              "name": "If yes, mention details (Tata other name past)",
+              "description": "Shown when Done business with Tata Chemicals under any other name is Yes.",
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "tataOtherNamePastDetails",
+              "required": false
+            },
+            {
+              "number": "16.30.5",
+              "type": "Question",
+              "name": "Any lawsuits / legal actions / litigation?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "lawsuits",
+              "required": true
+            },
+            {
+              "number": "16.30.6",
+              "type": "Question",
+              "name": "If yes, mention details (lawsuits)",
+              "description": "Shown when Lawsuits/legal actions is Yes.",
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "lawsuitsDetails",
+              "required": false
+            },
+            {
+              "number": "16.30.7",
+              "type": "Question",
+              "name": "Any Show Cause notices from Govt authorities?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "showCauseNotices",
+              "required": true
+            },
+            {
+              "number": "16.30.8",
+              "type": "Question",
+              "name": "If yes, mention details (show cause notices)",
+              "description": "Shown when Show Cause notices is Yes.",
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "showCauseNoticesDetails",
+              "required": false
+            },
+            {
+              "number": "16.30.9",
+              "type": "Question",
+              "name": "Ever been barred from business with any Tata group company?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "barredTataGroup",
+              "required": true
+            },
+            {
+              "number": "16.30.10",
+              "type": "Question",
+              "name": "Any officers/employees/close relatives working(ed) for Tata Chemical Limited?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "relativesAtTcl",
+              "required": true
+            },
+            {
+              "number": "16.30.11",
+              "type": "Question",
+              "name": "If yes, names, dates, positions",
+              "description": "Shown when Relatives at TCL is Yes.",
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "relativesAtTclDetails",
+              "required": false
+            }
+          ]
+        },
+        {
+          "number": "16.31",
+          "title": "Financial Information (Turnover)",
+          "fields": [
+            {
+              "number": "16.31.1",
+              "type": "Question",
+              "name": "Turnover FY (N-1) (Lakhs)",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Currency / Number",
+              "allowedValues": null,
+              "formName": "turnoverN1",
+              "required": true
+            },
+            {
+              "number": "16.31.2",
+              "type": "Question",
+              "name": "Turnover FY (N-2) (Lakhs)",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Currency / Number",
+              "allowedValues": null,
+              "formName": "turnoverN2",
+              "required": true
+            },
+            {
+              "number": "16.31.3",
+              "type": "Question",
+              "name": "Turnover FY (N-3) (Lakhs)",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Currency / Number",
+              "allowedValues": null,
+              "formName": "turnoverN3",
+              "required": true
+            }
+          ]
+        },
+        {
+          "number": "16.32",
+          "title": "Customer References",
+          "fields": [
+            {
+              "number": "16.32.1.1",
+              "type": "Question",
+              "name": "Customer Name (Reference)",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "customerName",
+              "required": true
+            },
+            {
+              "number": "16.32.1.2",
+              "type": "Question",
+              "name": "Contact Person Name (Customer Reference)",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "customerContactPerson",
+              "required": true
+            },
+            {
+              "number": "16.32.1.3",
+              "type": "Question",
+              "name": "Contact No. (Customer Reference)",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Phone number validation",
+              "allowedValues": null,
+              "formName": "customerContactNo",
+              "required": true
+            },
+            {
+              "number": "16.32.1.4",
+              "type": "Question",
+              "name": "Total billing last FY (Rs.)",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Currency",
+              "allowedValues": null,
+              "formName": "customerBilling",
+              "required": true
+            }
+          ]
+        },
+        {
+          "number": "16.33",
+          "title": "Workforce",
+          "fields": [
+            {
+              "number": "16.33.1",
+              "type": "Question",
+              "name": "Total Workforce",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Integer",
+              "allowedValues": null,
+              "formName": "totalWorkforce",
+              "required": true
+            },
+            {
+              "number": "16.33.2.1",
+              "type": "Question",
+              "name": "Workforce — General",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Integer",
+              "allowedValues": null,
+              "formName": "wfGeneral",
+              "required": true
+            },
+            {
+              "number": "16.33.2.2",
+              "type": "Question",
+              "name": "Workforce — SC/ST",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Integer",
+              "allowedValues": null,
+              "formName": "wfScst",
+              "required": true
+            },
+            {
+              "number": "16.33.2.3",
+              "type": "Question",
+              "name": "Workforce — OBC / Others",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Integer",
+              "allowedValues": null,
+              "formName": "wfObcOthers",
+              "required": true
+            },
+            {
+              "number": "16.33.2.4",
+              "type": "Question",
+              "name": "Workforce — Women",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Integer",
+              "allowedValues": null,
+              "formName": "wfWomen",
+              "required": true
+            },
+            {
+              "number": "16.33.2.5",
+              "type": "Question",
+              "name": "Workforce — Person with Disability",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Integer",
+              "allowedValues": null,
+              "formName": "wfPwd",
+              "required": true
+            }
+          ]
+        },
+        {
+          "number": "16.34",
+          "title": "Plant & Establishment",
+          "fields": [
+            {
+              "number": "16.34.1",
+              "type": "Question",
+              "name": "Location of the Plant",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "plantLocation",
+              "required": true
+            },
+            {
+              "number": "16.34.2",
+              "type": "Question",
+              "name": "Year of Establishment",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Integer",
+              "allowedValues": null,
+              "formName": "establishmentYear",
+              "required": true
+            }
+          ]
+        },
+        {
+          "number": "16.35",
+          "title": "Certifications",
+          "fields": [
+            {
+              "number": "16.35.1",
+              "type": "Question",
+              "name": "Select your certificates",
+              "description": "Hold Ctrl/⌘ to select multiple.",
+              "answerType": "dropdown",
+              "acceptableValues": "List of Choices (multi-select)",
+              "allowedValues": [
+                "ISO 9001",
+                "SA 8000",
+                "ISO 14000 accredited",
+                "OHSAS 18001 accredited",
+                "Any other certification",
+                "Not Applicable"
+              ],
+              "formName": "certificatesSelect",
+              "required": true
+            },
+            {
+              "number": "16.35.2",
+              "type": "Question",
+              "name": "Attach ISO 9001 certificate",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "iso9001CertUpload",
+              "required": false
+            },
+            {
+              "number": "16.35.3",
+              "type": "Question",
+              "name": "Attach SA 8000 certificate",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "sa8000CertUpload",
+              "required": false
+            },
+            {
+              "number": "16.35.4",
+              "type": "Question",
+              "name": "Attach ISO 14000 accredited certificate",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "iso14000CertUpload",
+              "required": false
+            },
+            {
+              "number": "16.35.5",
+              "type": "Question",
+              "name": "Attach OHSAS 18001 accredited certificate",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "ohsas18001CertUpload",
+              "required": false
+            },
+            {
+              "number": "16.35.6",
+              "type": "Question",
+              "name": "Attach any other certification",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "otherCertUpload",
+              "required": false
+            }
+          ]
+        },
+        {
+          "number": "16.36",
+          "title": "Compliance & SHE",
+          "fields": [
+            {
+              "number": "16.36.1",
+              "type": "Question",
+              "name": "Consent to operate from Pollution Control Board?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "consentPcb",
+              "required": true
+            },
+            {
+              "number": "16.36.2",
+              "type": "Question",
+              "name": "Factory License as per Factories Act 1948?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "factoryLicense",
+              "required": true
+            },
+            {
+              "number": "16.36.3",
+              "type": "Question",
+              "name": "Policy on Safety, Health & Environment (SHE)?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "shePolicy",
+              "required": true
+            },
+            {
+              "number": "16.36.4",
+              "type": "Question",
+              "name": "Pay minimum wages to employees & contractors?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "minWages",
+              "required": true
+            },
+            {
+              "number": "16.36.5",
+              "type": "Question",
+              "name": "Employees & contractor employees covered under PF?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "pfCovered",
+              "required": true
+            },
+            {
+              "number": "16.36.6",
+              "type": "Question",
+              "name": "Regular medical check-up (hazardous areas)?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "medicalCheckups",
+              "required": true
+            },
+            {
+              "number": "16.36.7",
+              "type": "Question",
+              "name": "No child labour (<18 years) in company facilities?",
+              "description": null,
+              "answerType": "Yes/No",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes",
+                "No"
+              ],
+              "formName": "noChildLabour",
+              "required": true
+            }
+          ]
+        },
+        {
+          "number": "17",
+          "title": "Service Provider / Logistics",
+          "fields": [
+            {
+              "number": "17.10.4",
+              "type": "Question",
+              "name": "Nature of services document (agreement/SOW/invoice/email etc.)",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "taxNatureDocs",
+              "required": false
+            }
+          ]
+        },
+        {
+          "number": "18",
+          "title": "Additional Contacts & Attachments",
+          "fields": [
+            {
+              "number": "18.6",
+              "type": "Question",
+              "name": "Supplier Contact 2",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "contact2Name",
+              "required": false
+            },
+            {
+              "number": "18.7",
+              "type": "Question",
+              "name": "Contact 2 Mobile No.",
+              "description": null,
+              "answerType": "Text (single line limited)",
+              "acceptableValues": "Phone number validation",
+              "allowedValues": null,
+              "formName": "contact2Mobile",
+              "required": false
+            },
+            {
+              "number": "18.8",
+              "type": "Question",
+              "name": "Contact 2 Email",
+              "description": null,
+              "answerType": "Email",
+              "acceptableValues": "Email validation",
+              "allowedValues": null,
+              "formName": "contact2Email",
+              "required": false
+            },
+            {
+              "number": "18.15.4",
+              "type": "Question",
+              "name": "Additional attachment (if any)",
+              "description": null,
+              "answerType": "File Upload",
+              "acceptableValues": "Any Value",
+              "allowedValues": null,
+              "formName": "additionalAttachmentAny",
+              "required": false
+            }
+          ]
+        },
+        {
+          "number": "19",
+          "title": "Declaration",
+          "fields": [
+            {
+              "number": "19",
+              "type": "Question",
+              "name": "Declaration (information true; nothing concealed)",
+              "description": null,
+              "answerType": "dropdown",
+              "acceptableValues": "List of Choices",
+              "allowedValues": [
+                "Yes"
+              ],
+              "formName": "supplierDeclaration",
+              "required": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

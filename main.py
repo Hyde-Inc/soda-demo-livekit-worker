@@ -147,9 +147,6 @@ def get_form_section_status(form: dict[str, Any], all_questions: list[dict[str, 
     return sections_status
 
 
-from get_dealers import get_dealers
-
-
 logger = logging.getLogger("outbound-caller")
 logger.setLevel(logging.INFO)
 
@@ -360,12 +357,16 @@ class OutboundCaller(Agent):
                 ## OBJECTIVE
                 Help the vendor fill the **Supplier General Information** form (main section plus Bank Information, Tax Information, Additional Information, Supporting Documents). Go through each question one by one in the order listed, collect answers in Hinglish, and be professional and helpful.
                 
+                ## TONE & MANNER
+                Be **polite and calm in every situation**. Give every response in a very polite way. Use courteous language (e.g. kripya, dhanyavaad, maafi chahti hoon). Never sound rushed, impatient, or curt. If the user is confused, repeats, or corrects — stay calm and polite. This applies to greetings, questions, corrections, refusals, and goodbyes.
+                
                 
                 ## OPENING (say this first after confirming you are speaking with the right person)
                 "Namaste, main Tata Chemicals ki AI agent hoon. Mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu."
                 **Always ask:** "Kya main {supplier_name} ki taraf se kisi representative se baat kar rahi hoon?" / "Are you speaking from {supplier_name}?" — wait for yes/no before continuing.
                 "Mai ye dekh paa rahi hu ki kuch sawalon ke jawab fill ho chuke hai, kya aap bache hue sawalo ko complete karne mein meri madat kar sakte ho?"
-                If they say yes/haaan, then move to the questions below. Do not mention any section name when asking the questions.
+                If they say **yes/haaan**, then move to the questions below. Do not mention any section name when asking the questions.
+                If they say **no/nahi** or "I don't work here" / "main is org se nahi hu" / "nahi mai iss industry se nahi hu" / "we are not suppliers" / "wrong number" / "galat number": you MUST **speak** a polite response OUT LOUD first — e.g. "Kripya maafi chahti hoon, aapko disturb kiya. Aapka time dene ke liye dhanyavaad. Aapka din accha ho!" or "Sorry to disturb. Thank you for your time. Have a good day!" — so the user **hears** the goodbye. Only AFTER saying this out loud, call end_call(sorry=True). **Never** cut the call without speaking the polite goodbye first; the user must always hear your response before the call ends.
                 
                 ## FORM QUESTIONS & ANSWERS
                 {questions_block}
@@ -377,43 +378,52 @@ class OutboundCaller(Agent):
                 - If they choose a section, ask the questions in that section one by one.
                 - If they say kuch bhi/koi bhi chalega, begin with the first question in that section which is not answered yet.
                 - If they have answered some questions, ask the ones that are not answered yet.
-                - One question at a time. After you get an answer, acknowledge briefly and ask the next question.
+                - One question at a time. After you get the complete information for a field (and for critical fields, after confirmation — see below), call submit_form_answers only for the new field, then acknowledge briefly and ask the next question. Do NOT wait until the entire form is filled; update after every field.
+                - **Long inputs in parts (mobile number, account number, IFSC code, etc.)**: If the user gives only part of the answer (e.g. first few digits), repeat back what you heard and ask for the rest. Say: "[Repeat the part you heard] — iske aage bataye" / "Ye suna: [repeat]. Baaki bataiye." Do not move to the next question until the full value is complete. Once you have the complete information, then confirm (for critical fields) and call submit_form_answers.
                 - If a question has allowed values (Options): when the list is long, mention only 3–4 options when asking; if the user specifically asks for all options (e.g. "sab batao", "poori list"), then mention all. For short lists, you may mention all. They can answer in their own words if it matches.
                 - For optional (non-required) questions, they can say "skip" or "nahi chahiye"; then move to the next.
                 - Keep responses crisp (max 30 words when possible).
-                - When all questions are done, say: "Form complete ho gaya. Dhanyavaad aapke time ke liye. Aapka din accha ho!" then call update_lead_after_call and end_call.
+                - When all questions are done, say: "Form complete ho gaya. Dhanyavaad aapke time ke liye. Aapka din accha ho!" then call end_call. (You will have already called submit_form_answers after each field.)
+                
+                ## CONFIRMATION OF CRITICAL FIELDS (MANDATORY BEFORE SUBMIT FOR THAT FIELD)
+                For **important fields where accuracy is critical** (account number, mobile number, primary contact mobile, email, bank account number, IFSC code, or other bank/financial details): after you get the answer, repeat it back and get verbal confirmation (e.g. "Aapka account number [repeat digits] hai, sahi hai?" / "Mobile number [repeat] confirm karein?") and wait for yes/sahi hai/galat. If they correct it, update the answer and confirm again if needed. Then call submit_form_answers with **only** that field's question-answer (the one you just got). Do not skip this for bank details, account numbers, or phone numbers.
+                
+                ## LOGICAL VALIDATION OF RESPONSES
+                Perform basic logical checks on user answers using your knowledge. Do not use any external search tool — use only logical validation from your training/knowledge. Examples:
+                - **Country and city**: If country is India, city/region should be an Indian city (e.g. Mumbai, Delhi, Chennai). If country is USA, city should be in USA. If the city does not match the country, politely ask the user to confirm or correct (e.g. "Aapne [city] bataya, ye [country] mein hai? Kripya confirm karein.")
+                - **Pincode and country**: Indian pincodes are 6 digits. If country is India and pincode is not 6 digits, ask to re-enter. Other countries may have different formats — use your knowledge if unsure.
+                - **State/region and country**: State or region should belong to the selected country (e.g. Maharashtra is in India, California is in USA).
+                - **Bank branch name**: When the user gives a branch name (e.g. for bank details), use your knowledge to validate or suggest the likely exact/official branch name if you know it. Politely ask the user to confirm (e.g. "Kripya confirm karein — branch ka naam [name] hai?") before submitting. If unsure, ask them to confirm the spelling or full name.
+                When something seems inconsistent (e.g. city vs country), use your knowledge to check and politely ask the user to confirm or correct. Stay polite when pointing out a possible mismatch.
                 
                 ## RESTRICTIONS
                 - No CRM/system references
                 - One question at a time
                 - Do not collect phone/email beyond what is in the form (e.g. Primary Contact Mobile, Email are in the list)
                 
-                ## CLOSING AND CALL OUTCOME LOGGING
-                **CRITICAL**: Before ending ANY call, call `update_lead_after_call`:
-                - If vendor completed or partially completed form: opty_created=true
-                - If wants callback: recall_requested=true
-                - If not interested: not_interested=true
-                - If voicemail/no answer: connected=false
-                - Include agent_summary with what was collected (e.g. "Form partially filled: Supplier Name, Legal Name, Region, ...")
-                
                 ## END CALL SEQUENCE
-                1. SAY: "Dhanyavaad aapke time ke liye. Aapka din accha ho!"
-                2. Call update_lead_after_call
-                3. Call end_call
+                For **every** call end (including when user says no / wrong org / "iss industry se nahi hu" / not interested): you MUST speak a polite goodbye OUT LOUD first so the user hears it — e.g. "Kripya maafi chahti hoon. Dhanyavaad, aapka din accha ho!" — then call end_call. When ending because user said they are not from this industry / wrong org / not interested / wrong number, call end_call(sorry=True). For normal form-complete endings, call end_call(sorry=False).
+                1. SAY the goodbye out loud (user must hear it)
+                2. Call end_call(sorry=True if user refused/not from industry/wrong org, else sorry=False)
                 
                 ## ANSWERING MACHINE DETECTION
                 Signs: automated greetings, "leave a message", beep tones
-                Action: Call update_lead_after_call with connected=false
+                Action: Call detected_answering_machine (outcome is recorded automatically).
                 
                 ## TOOL CALL BEHAVIOR
-                Do NOT say any waiting phrase before end_call, update_lead_after_call, or submit_form_answers - call them silently.
-                When calling submit_form_answers send the user answers in English, if they are not in English, convert them to English.
+                Do NOT say any waiting phrase before end_call or submit_form_answers - call them silently.
+                When calling submit_form_answers send the user answers in English, if they are not in English, convert them to English. Pass **only** the question-answer(s) for the field you just collected — do NOT include previously submitted fields. One field per call.
                 
                 ## KEY RULES
+                - Be **polite and calm in every situation** — respond in a very polite way at all times.
                 - Be professional, conversational and helpful, not robotic
                 - Focus on filling the full Supplier General Information form; use the question list above as the single source of questions (all sections and subsections in order)
-                - ALWAYS AND ONLY call submit_form_answers with the collected Q&A JSON before end_call (so answers are published to the room)
-                - ALWAYS call update_lead_after_call before end_call
+                - If user gives long inputs (mobile, account number) in parts: repeat what you heard and say "iske aage bataye" / "baaki bataiye" until the full value is complete; only then confirm and submit.
+                - Call submit_form_answers **after every field** with **only** the question-answer for the field you just got — do not pass all fields. One field per submit. Do not wait until the whole form is done.
+                - For critical fields (account number, mobile, bank details, IFSC, etc.): repeat the value to the user and get confirmation, then call submit_form_answers with only that field's Q&A.
+                - When country/city/region might not match, use your knowledge to validate; then politely ask the user to confirm or correct.
+                - For bank branch name: use your knowledge to validate; confirm with the user before submitting.
+                - When user says no / wrong org / "iss industry se nahi hu" / not interested: always SPEAK the polite goodbye out loud first (so they hear it), then end_call(sorry=True). Never hang up without responding.
             """
         )
         # keep reference to the participant for transfers
@@ -448,85 +458,6 @@ class OutboundCaller(Agent):
 
 
     @function_tool()
-    async def update_lead_after_call(
-        self,
-        ctx: RunContext,
-        connected: bool,
-        opty_created: bool = False,
-        recall_requested: bool = False,
-        not_interested: bool = False,
-        agent_summary: str | None = None,
-        model: str | None = None,
-        variant: str | None = None,
-        time_to_buy_raw: str | None = None,
-        dealer_name: str | None = None,
-    ) -> dict:
-        """
-        MANDATORY: Call this tool before ending ANY call to record the outcome.
-        
-        Args:
-            connected: True if you spoke with a human, False for voicemail/no answer
-            opty_created: True if customer confirmed interest and dealership
-            recall_requested: True if customer wants to be called back later
-            not_interested: True if customer explicitly not interested
-            agent_summary: Brief summary of the conversation
-            model: The car model the customer is interested in (e.g., "Nexon", "Punch", "Harrier")
-            variant: The specific variant (e.g., "Fearless+ PS", "Creative+")
-            time_to_buy_raw: When customer plans to buy - classify as:
-                - "30_days" if within 1 month / immediately / very soon / jaldi / turant
-                - "60_days" if 1-2 months / next month / couple of months
-                - "90_days" if 2-3 months or more / later / sochna hai / planning
-            dealer_name: The dealer/dealership name customer prefers
-            
-        Returns:
-            Status of the database update
-        """
-        participant_identity = self.participant.identity if self.participant else "unknown"
-        
-        # Classify time_to_buy from raw input
-        time_to_buy = None
-        if time_to_buy_raw:
-            raw_lower = time_to_buy_raw.lower()
-            if any(kw in raw_lower for kw in ["immedi", "now", "today", "week", "jaldi", "turant", "abhi", "30", "1 month", "one month", "ek mahine"]):
-                time_to_buy = "30_days"
-            elif any(kw in raw_lower for kw in ["60", "2 month", "two month", "do mahine", "next month", "couple"]):
-                time_to_buy = "60_days"
-            else:
-                time_to_buy = "90_days"
-        
-        logger.info(
-            f"Recording call outcome for {participant_identity}: "
-            f"connected={connected}, opty={opty_created}, recall={recall_requested}, "
-            f"not_interested={not_interested}, model={model}, variant={variant}, "
-            f"time_to_buy={time_to_buy}, dealer={dealer_name}, room_id={self.room_id}, "
-            f"transcript_items={len(self.transcript)}"
-        )
-        
-        # Mark that outcome was recorded
-        self.call_outcome_written = True
-        
-        # If we have a lead_id, update the database
-        if self.lead_id:
-            result = await update_lead_in_db(
-                lead_id=self.lead_id,
-                connected=connected,
-                opty_created=opty_created,
-                recall_requested=recall_requested,
-                not_interested=not_interested,
-                agent_summary=agent_summary,
-                room_id=self.room_id,
-                transcript=self.transcript if self.transcript else None,
-                model=model,
-                variant=variant,
-                time_to_buy=time_to_buy,
-                dealer_code=dealer_name,
-            )
-            return result
-        else:
-            logger.info("No lead_id - skipping database update (manual/test call)")
-            return {"success": True, "note": "No lead_id - manual call"}
-
-    @function_tool()
     async def detected_answering_machine(self, ctx: RunContext):
         """CRITICAL: Call this tool IMMEDIATELY when you detect an answering machine or voicemail greeting.
         
@@ -538,9 +469,7 @@ class OutboundCaller(Agent):
         - Any robotic/pre-recorded voice
         
         Call this tool IMMEDIATELY when ANY of these are detected, BEFORE continuing conversation.
-        This will hang up the call automatically.
-        
-        NOTE: Call update_lead_after_call with connected=false BEFORE calling this tool."""
+        This will hang up the call automatically."""
         participant_identity = self.participant.identity if self.participant else "unknown"
         logger.info(f"detected answering machine for {participant_identity}")
         
@@ -558,22 +487,22 @@ class OutboundCaller(Agent):
         await self.hangup()
     
     @function_tool()
-    async def end_call(self, ctx: RunContext):
+    async def end_call(self, ctx: RunContext, sorry: bool = False):
         """End the call. STRICT REQUIREMENTS:
         
-        1. You MUST have already SPOKEN "Dhanyavaad aapke time ke liye. Aapka din accha ho!" OUT LOUD
-        2. You MUST have already called update_lead_after_call
+        1. You MUST have already SPOKEN the closing greeting OUT LOUD (e.g. "Dhanyavaad aapke time ke liye. Aapka din accha ho!" or "Sorry to disturb. Thank you for your time.")
         
-        DO NOT call this tool without completing both steps above.
-        The greeting must be spoken to the user, not just thought about."""
+        Args:
+            sorry: Set to True when the user said they are not from this industry / wrong org / not interested / wrong number — so we ended politely with a sorry/thank-you. False for normal form-complete endings.
+        
+        DO NOT call this tool without speaking the closing greeting first."""
         participant_identity = self.participant.identity if self.participant else "unknown"
-        logger.info(f"ending the call for {participant_identity}")
+        logger.info(f"ending the call for {participant_identity}, sorry={sorry}")
         
         # Enforce that outcome was recorded
         if not self.call_outcome_written and self.lead_id:
             logger.warning(
-                f"end_call called without update_lead_after_call for lead {self.lead_id}. "
-                "Recording as connected but no outcome."
+                f"end_call for lead {self.lead_id}: recording outcome (none recorded yet)."
             )
             await update_lead_in_db(
                 lead_id=self.lead_id,
@@ -583,6 +512,13 @@ class OutboundCaller(Agent):
                 transcript=self.transcript if self.transcript else None,
             )
             self.call_outcome_written = True
+        
+        if sorry:
+            speech_handle = ctx.session.say("Kripya maafi chahti hoon. Dhanyavaad, aapka din accha ho!", allow_interruptions=False)
+            await speech_handle.wait_for_playout()
+        else:
+            speech_handle = ctx.session.say("Dhanyavaad aapke time ke liye. Aapka din accha ho!", allow_interruptions=False)
+            await speech_handle.wait_for_playout()
         
         await self.hangup()
 
@@ -637,43 +573,6 @@ class OutboundCaller(Agent):
         product = get_product_from_json(model_name)
         return product
     
-    @function_tool
-    async def get_dealerships(self, ctx: RunContext, pincode: str) -> list[dict[str, Any]]:
-        """Get the dealerships near a given pincode.
-        
-        Args:
-            pincode: The pincode to search for nearby dealerships - must be 6 digits (e.g., "400018")
-        
-        Returns:
-            List of dealer dictionaries with name, address, phone, etc.
-            Returns error dict if pincode is invalid or API fails.
-        """
-        # Clean and validate pincode
-        pincode = pincode.strip().replace(" ", "")
-        
-        # Indian pincodes are always 6 digits
-        if len(pincode) != 6:
-            logger.warning(f"Invalid pincode length: {pincode} ({len(pincode)} digits)")
-            return [{"error": "pincode must be 6 digits", "pincode_received": pincode}]
-        
-        try:
-            # Run sync HTTP call in thread pool to avoid blocking event loop
-            dealerships = await asyncio.to_thread(get_dealers, pincode)
-            
-            if not dealerships:
-                logger.info(f"No dealerships found for pincode: {pincode}")
-                return [{"error": "no dealerships found", "pincode": pincode}]
-            
-            logger.info(f"Found {len(dealerships)} dealerships for pincode {pincode}")
-            return dealerships
-            
-        except Exception as e:
-            logger.error(f"Failed to fetch dealerships for {pincode}: {e}")
-            return [{"error": f"failed to fetch dealerships: {str(e)}"}]
-
-
-
-
 async def entrypoint(ctx: JobContext):
     logger.info(f"connecting to room {ctx.room.name}")
     await ctx.connect()
@@ -777,16 +676,17 @@ async def entrypoint(ctx: JobContext):
     # handling would rely only on STT and be slower.
     session = AgentSession(
         # turn_detection=MultilingualModel(),  # Temporarily disabled - requires model download
-        # Use VAD-based turn detection (VAD + allow_interruptions = barge-in)
+        turn_detection="vad",  # VAD-only so min_endpointing_delay is applied (session-level wait before agent responds)
         vad=silero.VAD.load(
             activation_threshold=0.9,      # Lower = more sensitive (default: 0.5)
-            min_speech_duration=1,      # Min speech duration to trigger (default: 0.05s)
-            min_silence_duration=1,     # Silence before ending speech (default: 0.55s)
+            min_speech_duration=1,         # Min speech duration to trigger (default: 0.05s)
+            min_silence_duration=3.0,      # Silence (sec) after speech before "user finished" — listen until 5s silence, then take as input (default: 0.55s).
         ),
         stt=sarvam.STT(model = 'saarika:v2.5', language='hi-IN'),
         # stt=deepgram.STT(language='en'),
         # you can also use OpenAI's TTS with openai.TTS()
-        tts=cartesia.TTS(model ='sonic-2',voice='95d51f79-c397-46f9-b49a-23763d3eaa2d',language='hi'),
+        # Cartesia speed: 0.6–1.5 (multiplier; <1 = slower). See https://docs.cartesia.ai (Volume, Speed, Emotion).
+        tts=cartesia.TTS(model='sonic-3', voice='95d51f79-c397-46f9-b49a-23763d3eaa2d', language='hi', speed=0.95),
         # tts=cartesia.TTS(language='en'),
         # llm=aws.LLM(model="anthropic.claude-3-haiku-20240307-v1:0"),
         llm=openai.LLM(model="gpt-5.2"),
