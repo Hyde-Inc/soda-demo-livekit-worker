@@ -9,9 +9,48 @@ import asyncio
 import logging
 import json
 import os
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 from uuid import UUID
+
+# ---------------------------------------------------------------------------
+# SAP Ariba Supplier Data API (EU, realm=tatachem-T).
+# Token from OAuth; Application Key sent as apiKey header (ARIBA_API_KEY in env). Refresh token when expired.
+# ---------------------------------------------------------------------------
+FORM_AUTH_API_URL = "https://api-eu.ariba.com/v2/oauth/token"
+ARIBA_RUNTIME_URL = "https://eu.openapi.ariba.com"
+ARIBA_BASE_URL = f"{ARIBA_RUNTIME_URL}/api/supplierdatapagination/v4/prod"
+ARIBA_REALM = "tatachem-T"
+
+# KUSUM
+ARIBA_VENDOR_ID = "S80292540"
+ARIBA_QUESTIONNAIRE_ID = "Doc2955540815"
+
+# # RAJ SALES
+# ARIBA_VENDOR_ID = "S80300249"
+# ARIBA_QUESTIONNAIRE_ID = "Doc2957718454"
+
+
+# # FRANSTEK
+# ARIBA_VENDOR_ID = "S80292331"
+# ARIBA_QUESTIONNAIRE_ID = "Doc2955284488"
+
+# Token cache for form API (refreshed when expired)
+_form_api_token: Optional[str] = None
+_form_api_token_expiry: float = 0.0
+_form_api_token_lock = threading.Lock()
+
+# Ariba field mapping: formName (correlationId) -> (itemId, correlationId) for submit payload
+_form_field_mapping: dict[str, tuple[str, str]] = {}
+_ariba_workspace_id: Optional[str] = None
+# QnA and answers URLs from first questionnaire link in workspaces response (set by _fetch_ariba_qna_url_from_workspaces)
+_ariba_qna_url_cached: Optional[str] = None
+_ariba_answers_url_cached: Optional[str] = None
 
 from livekit import rtc, api
 from livekit.agents import (
@@ -59,6 +98,15 @@ def load_supplier_general_info_form_from_json() -> dict[str, Any]:
         return json.load(f)
 
 
+def load_form_from_json(path: str | Path) -> dict[str, Any]:
+    """Load a form definition from a JSON file. Path can be filename (relative to script dir) or full path."""
+    json_path = Path(path)
+    if not json_path.is_absolute():
+        json_path = Path(__file__).parent / json_path
+    with open(json_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
 def get_all_form_questions_from_supplier_form(form: dict[str, Any]) -> list[dict[str, Any]]:
     """Flatten all questions from Supplier General Information form: section fields (including subfields for address),
     then each subsection's fields, in order."""
@@ -80,7 +128,7 @@ def get_all_form_questions_from_supplier_form(form: dict[str, Any]) -> list[dict
                         "formName": f"{parent_form}.{sub.get('formName', '')}" if parent_form else sub.get("formName", ""),
                         "answerType": sub.get("answerType"),
                     }
-                    if "user_answer" in sub:
+                    if "user_answer" in sub and sub["name"] == "Supplier Name 1":
                         q["user_answer"] = sub["user_answer"]
                     questions.append(q)
             else:
@@ -145,6 +193,373 @@ def get_form_section_status(form: dict[str, Any], all_questions: list[dict[str, 
                 "total": count_sub,
             })
     return sections_status
+
+
+def _fetch_form_api_token_sync() -> tuple[str, int]:
+    """
+    Call Ariba OAuth token API (Client Credentials, Basic Auth).
+    Uses FORM_AUTH_CLIENT_ID and FORM_AUTH_CLIENT_SECRET from env.
+    Returns (token, expires_in_seconds).
+    """
+    import base64
+    client_id = os.environ.get("FORM_AUTH_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("FORM_AUTH_CLIENT_SECRET", "").strip()
+    if not client_id or not client_secret:
+        raise ValueError("FORM_AUTH_CLIENT_ID and FORM_AUTH_CLIENT_SECRET must be set for form API auth")
+    credentials = base64.b64encode(f"{client_id}:{client_secret}".encode("utf-8")).decode("ascii")
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {credentials}",
+    }
+    body = "grant_type=client_credentials".encode("utf-8")
+    req = urllib.request.Request(FORM_AUTH_API_URL, data=body, headers=headers, method="POST")
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    token = data.get("access_token") or data.get("token")
+    if not token:
+        raise ValueError("Auth API response missing access_token/token")
+    expires_in = int(data.get("expires_in", 3600))
+    if expires_in <= 0:
+        expires_in = 3600
+    return token, expires_in
+
+
+def get_form_api_token() -> str:
+    """Return a valid Bearer token for form API calls. Refreshes from auth API when expired."""
+    global _form_api_token, _form_api_token_expiry
+    with _form_api_token_lock:
+        now = time.time()
+        if _form_api_token and _form_api_token_expiry > now + 60:
+            return _form_api_token
+        token, expires_in = _fetch_form_api_token_sync()
+        _form_api_token = token
+        _form_api_token_expiry = now + expires_in - 60
+        return token
+
+
+def _clear_form_api_token() -> None:
+    """Clear cached token so next call will refresh."""
+    global _form_api_token, _form_api_token_expiry
+    with _form_api_token_lock:
+        _form_api_token = None
+        _form_api_token_expiry = 0.0
+
+
+def _ariba_headers() -> dict[str, str]:
+    """Headers for Ariba Supplier Data API: Bearer token + apiKey (Application Key from Developer Portal)."""
+    h: dict[str, str] = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {get_form_api_token()}",
+    }
+    application_key = os.environ.get("ARIBA_API_KEY", "").strip()
+    if application_key:
+        h["apiKey"] = application_key
+    return h
+
+
+def _ariba_workspaces_url(vendor_id: str) -> str:
+    return f"{ARIBA_BASE_URL}/vendors/{vendor_id}/workspaces?realm={ARIBA_REALM}"
+
+
+def _get_direct_qna_url() -> str:
+    """Build qna URL directly from ARIBA_VENDOR_ID and ARIBA_QUESTIONNAIRE_ID (no workspace ID in path)."""
+    return f"{ARIBA_BASE_URL}/vendors/{ARIBA_VENDOR_ID}/workspaces/questionnaires/{ARIBA_QUESTIONNAIRE_ID}/qna?realm={ARIBA_REALM}"
+
+
+def _ariba_answers_url_from_qna_url(qna_url: str) -> str:
+    """
+    Derive answers URL from qna URL by:
+      (1) Replacing '/qna' with '/answers'
+      (2) Removing the workspace id after 'workspaces'
+    """
+    # Split at '/workspaces'
+    if '/workspaces/' in qna_url:
+        prefix, suffix = qna_url.split('/workspaces/', 1)
+        # Remove the workspace id segment after /workspaces/
+        parts = suffix.split('/', 1)
+        # parts[0] is the workspace id; parts[1] is the rest
+        if len(parts) == 2:
+            rest = parts[1]
+        else:
+            rest = ''
+        # Replace '/qna' or '/qna?' with '/answers' or '/answers?'
+        if '/qna?' in rest:
+            rest = rest.replace('/qna?', '/answers?')
+        else:
+            rest = rest.replace('/qna', '/answers')
+        return f"{prefix}/workspaces/{rest}"
+    else:
+        # fallback, just replace
+        if "/qna?" in qna_url:
+            return qna_url.replace("/qna?", "/answers?")
+        return qna_url.replace("/qna", "/answers")
+
+
+def _parse_first_qna_url_from_workspaces_response(data: dict[str, Any]) -> tuple[str, str]:
+    """
+    Parse workspaces API response: data.workspaces is a dict of category -> list of workspaces.
+    Returns (workspace_id, qna_url) using the first workspace and its first questionnaire's QuestionAnswer link.
+    """
+    global _ariba_workspace_id, _ariba_qna_url_cached, _ariba_answers_url_cached
+    ws_obj = data.get("workspaces", {})
+    if not isinstance(ws_obj, dict):
+        ws_obj = data.get("data", {}) if isinstance(data.get("data"), dict) else {}
+    # ws_obj is e.g. {"SupplierRequest": [...], "Registration": [...]}
+    first_workspace: dict[str, Any] | None = None
+    key = "Registration"
+    lst = ws_obj.get(key) if isinstance(ws_obj.get(key), list) else []
+    if lst:
+        first_workspace = lst[0]
+    if not first_workspace:
+        # Fallback: any first list value
+        for v in ws_obj.values() if isinstance(ws_obj, dict) else []:
+            if isinstance(v, list) and v:
+                first_workspace = v[0]
+                break
+    if not first_workspace:
+        raise ValueError("Ariba workspaces response empty or missing workspaces list")
+    wid = first_workspace.get("workspaceId") or first_workspace.get("workspaceID") or first_workspace.get("id")
+    if not wid:
+        raise ValueError("Ariba workspaces response missing workspaceId")
+    questionnaires = first_workspace.get("questionnaires") or []
+    if not questionnaires:
+        raise ValueError("Ariba workspace has no questionnaires")
+    first_q = questionnaires[0]
+    links = first_q.get("links") or []
+    qna_href = None
+    for link in links:
+        if isinstance(link, dict) and (link.get("rel") or link.get("type")) == "QuestionAnswer":
+            qna_href = link.get("href")
+            break
+    if not qna_href or not isinstance(qna_href, str):
+        raise ValueError("First questionnaire has no QuestionAnswer link")
+    # Use host from ARIBA_BASE_URL, path and query from workspace QnA URL
+    base_parts = urllib.parse.urlparse(ARIBA_BASE_URL)
+    qna_parts = urllib.parse.urlparse(qna_href)
+    qna_url = urllib.parse.urlunparse((
+        base_parts.scheme,
+        base_parts.netloc,
+        qna_parts.path or "",
+        "",
+        qna_parts.query or "",
+        "",
+    ))
+    if "realm=" not in qna_url:
+        qna_url = f"{qna_url}?realm={ARIBA_REALM}" if "?" not in qna_url else f"{qna_url}&realm={ARIBA_REALM}"
+    _ariba_workspace_id = str(wid)
+    _ariba_qna_url_cached = qna_url
+    _ariba_answers_url_cached = _ariba_answers_url_from_qna_url(qna_url)
+    return str(wid), qna_url
+
+
+def get_ariba_workspace_id(vendor_id: str) -> str:
+    """GET workspace ID and first questionnaire QnA URL from Ariba; parses response and sets _ariba_qna_url_cached, _ariba_answers_url_cached."""
+    url = _ariba_workspaces_url(vendor_id)
+    headers = _ariba_headers()
+    try:
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        if e.code == 401:
+            logger.warning("Ariba workspaces 401 Unauthorized: %s. Refreshing token and retrying.", body or e.reason)
+            _clear_form_api_token()
+            headers = _ariba_headers()
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            try:
+                with urllib.request.urlopen(req, timeout=30) as retry_resp:
+                    data = json.loads(retry_resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as retry_e:
+                retry_body = ""
+                try:
+                    retry_body = retry_e.read().decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+                logger.error(
+                    "Ariba workspaces 401 after token refresh: %s. "
+                    "Check ARIBA_API_KEY in .env.local and that your OAuth token has access to this API.",
+                    retry_body or retry_e.reason,
+                )
+                raise ValueError(
+                    f"Ariba API 401 Unauthorized: {retry_body or retry_e.reason}. "
+                    "Ensure ARIBA_API_KEY (Application Key from Ariba Developer Portal) is set and the token has access to Supplier Data API."
+                ) from retry_e
+        else:
+            logger.error("Ariba workspaces HTTP %s: %s", e.code, body or e.reason)
+            raise
+    logger.info("Ariba workspaces response: %s", data)
+    wid, _ = _parse_first_qna_url_from_workspaces_response(data)
+    return wid
+
+
+def _normalize_ariba_qna_to_form(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Normalize Ariba Q&A response to our form schema (title, sections with fields).
+    Populates _form_field_mapping (formName -> (itemId, correlationId)) for submit.
+    """
+    global _form_field_mapping
+    _form_field_mapping = {}
+    logger.info("Ariba Q&A response keys: %s", list(data.keys()))
+    raw_list = data.get("_embedded", {}).get("questionAnswerList", [])
+    items: list[dict[str, Any]] = []
+    for entry in raw_list:
+        qa = entry.get("questionAnswer") if isinstance(entry, dict) else None
+        if qa:
+            items.append(qa)
+    if not items:
+        items = (
+            data.get("items")
+            or data.get("questionnaireItems")
+            or data.get("qna")
+            or data.get("questions")
+            or (data["data"] if isinstance(data.get("data"), list) else [])
+        )
+    fields: list[dict[str, Any]] = []
+    for i, it in enumerate(items):
+        item_id = str(it.get("itemId", it.get("itemID", "")))
+        corr_id = str(it.get("externalSystemCorrelationId", it.get("correlationId", it.get("correlationID", ""))))
+        if not corr_id:
+            corr_id = item_id
+        question_text = it.get("questionLabel", it.get("questionText", it.get("question", it.get("label", f"Question {i+1}"))))
+        answer_type = it.get("answerType", it.get("type", "ShortText"))
+        raw_answer = it.get("answer", it.get("answers", it.get("currentAnswers")))
+        if isinstance(raw_answer, list):
+            current = [str(x) for x in raw_answer]
+        elif raw_answer is not None and str(raw_answer).strip():
+            current = [str(raw_answer)]
+        else:
+            current = []
+        user_answer = current[0] if current else None
+        form_name = corr_id
+        _form_field_mapping[form_name] = (item_id, corr_id)
+        fields.append({
+            "number": str(i + 1),
+            "type": "Question",
+            "name": question_text,
+            "description": None,
+            "answerType": answer_type,
+            "acceptableValues": "Any Value",
+            "allowedValues": it.get("allowedValues"),
+            "formName": form_name,
+            "required": it.get("required", True),
+            "user_answer": user_answer,
+            "itemId": item_id,
+            "correlationId": corr_id,
+        })
+    title = data.get("title") or (items[0].get("questionnaireLabel") if items else None) or "Supplier Registration"
+    return {
+        "title": title,
+        "sections": [{"id": "ariba-qna", "number": "1", "name": title, "fields": fields}],
+    }
+
+
+def fetch_form_from_api() -> dict[str, Any]:
+    """
+    Fetch supplier registration form (Q&A) from Ariba. Uses direct qna URL built from
+    ARIBA_VENDOR_ID and ARIBA_QUESTIONNAIRE_ID. Returns normalized form schema for prompt;
+    populates _form_field_mapping, _ariba_qna_url_cached, _ariba_answers_url_cached.
+    """
+    global _ariba_qna_url_cached, _ariba_answers_url_cached
+    if not _ariba_qna_url_cached:
+        _ariba_qna_url_cached = _get_direct_qna_url()
+        _ariba_answers_url_cached = (
+            _ariba_qna_url_cached.replace("/qna?", "/answers?")
+            if "/qna?" in _ariba_qna_url_cached
+            else _ariba_qna_url_cached.replace("/qna", "/answers")
+        )
+    url = _ariba_qna_url_cached
+    if not url:
+        raise ValueError("Ariba QnA URL not set")
+    headers = _ariba_headers()
+    try:
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        logger.info("Ariba Q&A url: %s", url)
+        logger.info(f"Ariba Q&A response: {data}")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            _clear_form_api_token()
+            headers = _ariba_headers()
+            req = urllib.request.Request(url, headers=headers, method="GET")
+            with urllib.request.urlopen(req, timeout=30) as retry_resp:
+                data = json.loads(retry_resp.read().decode("utf-8"))
+        else:
+            raise
+    if data.get("sections") and isinstance(data.get("sections"), list):
+        return data
+    return _normalize_ariba_qna_to_form(data)
+
+
+def _submit_form_to_fill_api_sync(answers: list[dict[str, Any]]) -> tuple[bool, str]:
+    """POST form answers to Ariba answers endpoint. Uses _ariba_answers_url_cached (set when form was fetched)."""
+    global _ariba_qna_url_cached, _ariba_answers_url_cached
+    if not _ariba_answers_url_cached:
+        _ariba_qna_url_cached = _get_direct_qna_url()
+        _ariba_answers_url_cached = (
+            _ariba_qna_url_cached.replace("/qna?", "/answers?")
+            if "/qna?" in _ariba_qna_url_cached
+            else _ariba_qna_url_cached.replace("/qna", "/answers")
+        )
+    fill_url = _ariba_answers_url_cached
+    logger.info(f"Ariba answers URL: {fill_url}")
+    if not fill_url:
+        return False, "Ariba answers URL not set; fetch form from API first"
+    ariba_answers: list[dict[str, Any]] = []
+    for a in answers:
+        corr_id = a.get("externalSystemCorrelationId") or a.get("correlationId", "")
+        answer_val = a.get("answer", a.get("value", ""))
+        ariba_answers.append({
+            "externalSystemCorrelationId": str(corr_id),
+            "answer": answer_val,
+        })
+    if not ariba_answers:
+        return True, "No answers to submit"
+    payload: dict[str, Any] = {"answers": ariba_answers, "triggerApprove": True}
+    body = json.dumps(payload).encode("utf-8")
+
+    def _do_post() -> None:
+        logger.info(f"Skipping posting to ariba for now. Ariba answers URL: {fill_url}")
+        # req = urllib.request.Request(fill_url, data=body, headers=_ariba_headers(), method="POST")
+        # with urllib.request.urlopen(req, timeout=30) as resp:
+        #     resp.read()
+
+    try:
+        _do_post()
+        return True, "Submitted to Ariba form fill API"
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            _clear_form_api_token()
+            try:
+                _do_post()
+                return True, "Submitted to Ariba form fill API"
+            except Exception as retry_e:
+                return False, str(retry_e)
+        return False, str(e)
+    except Exception as e:
+        return False, str(e)
+
+
+def load_form_for_prompt(default_json_path: str = "form_supplier_general_info.json") -> dict[str, Any]:
+    """
+    Load form for the agent prompt: from Ariba API if auth credentials are set, otherwise from JSON file.
+    If the API request fails, falls back to the JSON file.
+    """
+    logger.info("Loading form for prompt from Ariba API")
+    if os.environ.get("FORM_AUTH_CLIENT_ID", "").strip() and os.environ.get("FORM_AUTH_CLIENT_SECRET", "").strip():
+        try:
+            return fetch_form_from_api()
+        except Exception as e:
+            logger.error("Form API fetch failed: %s", e)
+            logger.warning("Form API fetch failed, falling back to JSON file %s: %s", default_json_path, e)
+    return load_form_from_json(default_json_path)
 
 
 logger = logging.getLogger("outbound-caller")
@@ -285,6 +700,7 @@ class OutboundCaller(Agent):
         lead_id: str | None = None,
         batch_name: str | None = None,
         room_id: str | None = None,
+        form: dict[str, Any] | None = None,
     ):
         # Format vendor details for prompt context
         vendor_context = ""
@@ -309,17 +725,28 @@ class OutboundCaller(Agent):
                 - Batch: {batch_name or 'N/A'}
             """
         
-        # Load Supplier General Information form and get all questions for instructions
-        form = load_supplier_general_info_form_from_json()
+        # Load form for prompt: from Ariba API if provided/pre-loaded, else from API or JSON fallback
+        if form is None:
+            form = load_form_for_prompt("form_supplier_general_info.json")
+        logger.info(f"Form: {form}")
         all_questions = get_all_form_questions_from_supplier_form(form)
         questions_block_lines = []
         for q in all_questions:
-            num = q.get("number", "")
             name = q.get("name", "")
+            name_lower = (name or "").lower()
+            # Do not ask PAN, Bank, or GST details — skip these questions entirely
+            if "pan" in name_lower or "bank" in name_lower or "gst" in name_lower or "gstin" in name_lower:
+                continue
+            # Use externalSystemCorrelationId (formName/correlationId) as the number before the question
+            num = q.get("formName") or q.get("correlationId") or q.get("externalSystemCorrelationId") or q.get("number", "")
+            if name == "Supplier Name 1":
+                user_answer = q.get("user_answer") if q.get("user_answer") else "Not answered yet"
+            else:   
+                user_answer = "Not answered yet"
             desc = q.get("description")
             allowed = q.get("allowedValues")
             req = " (required)" if q.get("required") else ""
-            user_answer = q.get("user_answer") if q.get("user_answer") else "Not answered yet"
+            # user_answer = q.get("user_answer") if q.get("user_answer") else "Not answered yet"
             line = f"- [{num}] {name}{req} — User answer: {user_answer}"
             if desc:
                 line += f" — {desc}"
@@ -327,14 +754,22 @@ class OutboundCaller(Agent):
                 line += f" — Options: {', '.join(str(v) for v in allowed)}"
             questions_block_lines.append(line)
         questions_block = "\n                ".join(questions_block_lines) if questions_block_lines else "(No questions loaded)"
-        # Supplier name from form (16.1 Supplier Name 1) for verification question
+        # Supplier name from form: JSON form uses formName "supplierName1"; Ariba form uses question name "Full Company Name (Supplier Name)" or similar
         supplier_name = ""
         for q in all_questions:
-            if q.get("formName") == "supplierName1" and q.get("user_answer"):
-                supplier_name = (q.get("user_answer") or "").strip()
+            ans = (q.get("user_answer") or "").strip() if q.get("user_answer") else ""
+            if not ans:
+                continue
+            if q.get("name") == "Supplier Name 1":
+                supplier_name = ans
+                break
+            name_lower = (q.get("name") or "").lower()
+            if "full company name" in name_lower or ("supplier name" in name_lower and "company" in name_lower):
+                supplier_name = ans
                 break
         if not supplier_name:
             supplier_name = "the registered company"
+        supplier_name = supplier_name.lower()
         logger.info("Form questions loaded for prompt: %d questions", len(all_questions))
         logger.info("Form questions: %s", questions_block)
         super().__init__(
@@ -400,6 +835,7 @@ class OutboundCaller(Agent):
                 - No CRM/system references
                 - One question at a time
                 - Do not collect phone/email beyond what is in the form (e.g. Primary Contact Mobile, Email are in the list)
+                - **Do NOT ask for or collect PAN details, Bank details, or GST/GSTIN details.** Skip those topics entirely. If the user volunteers such information, do not record or submit it.
                 
                 ## END CALL SEQUENCE
                 For **every** call end (including when user says no / wrong org / "iss industry se nahi hu" / not interested): you MUST speak a polite goodbye OUT LOUD first so the user hears it — e.g. "Kripya maafi chahti hoon. Dhanyavaad, aapka din accha ho!" — then call end_call. When ending because user said they are not from this industry / wrong org / not interested / wrong number, call end_call(sorry=True). For normal form-complete endings, call end_call(sorry=False).
@@ -412,7 +848,7 @@ class OutboundCaller(Agent):
                 
                 ## TOOL CALL BEHAVIOR
                 Do NOT say any waiting phrase before end_call or submit_form_answers - call them silently.
-                When calling submit_form_answers send the user answers in English, if they are not in English, convert them to English. Pass **only** the question-answer(s) for the field you just collected — do NOT include previously submitted fields. One field per call.
+                When calling submit_form_answers send the user answers in English, if they are not in English, convert them to English. Pass **only** the question-answer(s) for the field you just collected — do NOT include previously submitted fields. One field per call. Use this format for each object: fieldName (from the form question name), externalSystemCorrelationId (from the form, e.g. formName/correlationId in the question list), answer (from the conversation).
                 
                 ## KEY RULES
                 - Be **polite and calm in every situation** — respond in a very polite way at all times.
@@ -531,12 +967,11 @@ class OutboundCaller(Agent):
 
         Args:
             form_answers_json: A JSON string: array of objects, each with:
-                - number: question number (e.g. "2", "16.1")
-                - name: question label (e.g. "Region", "Supplier Name")
-                - fieldId: form field name (e.g. "region", "supplierName")
-                - answer: the vendor's answer (English string)
+                - fieldName: question label from form (e.g. "Bank Name")
+                - externalSystemCorrelationId: field ID from form (e.g. "KI_17088017")
+                - answer: the vendor's answer from the conversation (English string)
 
-                Example: [{"number": "2", "name": "Region", "formName": "region", "answer": "Mithapur"}, {"number": "16.1", "name": "Supplier Name", "formName": "supplierName", "answer": "ABC Corp"}]
+                Example: [{"fieldName": "Bank Name", "externalSystemCorrelationId": "KI_17088017", "answer": "HDFC Bank"}]
 
         Returns:
             Status dict with success and message.
@@ -554,7 +989,33 @@ class OutboundCaller(Agent):
             if self.room:
                 await _publish_transcript_to_room(self.room, payload)
             logger.info("Published form_answers to room: %d Q&A pairs", len(answers))
-            return {"success": True, "message": f"Submitted {len(answers)} form answers to room", "count": len(answers)}
+
+            # Submit to Ariba: send only externalSystemCorrelationId and answer (not fieldName)
+            answers_for_ariba = [
+                {
+                    "externalSystemCorrelationId": (
+                        a.get("externalSystemCorrelationId")
+                        or a.get("correlationId")
+                        or a.get("formName")
+                        or ""
+                    ),
+                    "answer": a.get("answer", a.get("value", "")),
+                }
+                for a in answers
+            ]
+            fill_success, fill_message = _submit_form_to_fill_api_sync(answers_for_ariba)
+
+            if not fill_success:
+                logger.warning("Form fill API failed: %s", fill_message)
+            else:
+                logger.info("Form fill API: %s", fill_message)
+
+            msg = f"Submitted {len(answers)} form answers to room"
+            if fill_success and "skipped" not in fill_message.lower():
+                msg += f"; {fill_message}"
+            elif not fill_success:
+                msg += f"; fill API error: {fill_message}"
+            return {"success": True, "message": msg, "count": len(answers)}
         except json.JSONDecodeError as e:
             logger.warning("submit_form_answers invalid JSON: %s", e)
             return {"success": False, "error": f"Invalid JSON: {e}"}
@@ -660,6 +1121,9 @@ async def entrypoint(ctx: JobContext):
         ctx.shutdown()
         return
 
+    # Load form in a thread so Ariba API fetch does not block the event loop
+    form = await asyncio.to_thread(load_form_for_prompt, "form_supplier_general_info.json")
+
     # look up the user's phone number and appointment details
     agent = OutboundCaller(
         dial_info=dial_info,
@@ -667,6 +1131,7 @@ async def entrypoint(ctx: JobContext):
         lead_id=lead_id,
         batch_name=batch_name,
         room_id=room_id,
+        form=form,
     )
     agent.room = ctx.room  # for publishing transcript to LiveKit
 
@@ -786,14 +1251,16 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning(f"Failed to capture transcript item: {e}")
 
-    # start the session first before dialing, to ensure that when the user picks up
-    # the agent does not miss anything the user says
+    # Start the session first before dialing so the agent does not miss anything the user says.
+    # Pass participant_identity so RoomIO explicitly waits for and links to the SIP participant's
+    # audio track; otherwise we rely on "first participant" and can miss linking if timing is off.
     session_started = asyncio.create_task(
         session.start(
             agent=agent,
             room=ctx.room,
             room_input_options=RoomInputOptions(
-                # enable Krisp background voice and noise removal
+                participant_identity=participant_identity,
+                pre_connect_audio_timeout=10.0,
                 # noise_cancellation=noise_cancellation.BVCTelephony(),
             ),
         )
