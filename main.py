@@ -3,7 +3,8 @@ from __future__ import annotations
 # load environment variables FIRST, before any LiveKit imports
 # This ensures LIVEKIT_URL is available when the CLI framework initializes
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=".env.local")
+load_dotenv()  # .env
+load_dotenv(dotenv_path=".env.local")  # optional local overrides
 
 import asyncio
 import logging
@@ -526,10 +527,9 @@ def _submit_form_to_fill_api_sync(answers: list[dict[str, Any]]) -> tuple[bool, 
     body = json.dumps(payload).encode("utf-8")
 
     def _do_post() -> None:
-        logger.info(f"Skipping posting to ariba for now. Ariba answers URL: {fill_url}")
-        # req = urllib.request.Request(fill_url, data=body, headers=_ariba_headers(), method="POST")
-        # with urllib.request.urlopen(req, timeout=30) as resp:
-        #     resp.read()
+        req = urllib.request.Request(fill_url, data=body, headers=_ariba_headers(), method="POST")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp.read()
 
     try:
         _do_post()
@@ -545,6 +545,95 @@ def _submit_form_to_fill_api_sync(answers: list[dict[str, Any]]) -> tuple[bool, 
         return False, str(e)
     except Exception as e:
         return False, str(e)
+
+
+def _flush_collected_form_answers_sync(
+    collected: list[dict[str, Any]],
+    run_browserbase: bool = True,
+    run_browserbase_in_subprocess: bool = False,
+) -> tuple[bool, str]:
+    """
+    Flush collected form answers: dedupe by externalSystemCorrelationId (last wins),
+    then submit to Ariba form fill API and optionally run Browserbase form fill.
+
+    When run_browserbase_in_subprocess=True (e.g. on_session_close), Browserbase runs in a
+    detached subprocess so it can complete after the worker exits; the worker returns immediately.
+    When run_browserbase_in_subprocess=False (e.g. end_call), Browserbase runs in-process and we wait.
+    """
+    if not collected:
+        return True, "No form answers to submit"
+    # Dedupe by externalSystemCorrelationId — keep last occurrence
+    by_corr: dict[str, dict[str, Any]] = {}
+    for a in collected:
+        corr = (
+            a.get("externalSystemCorrelationId")
+            or a.get("correlationId")
+            or a.get("formName")
+            or ""
+        )
+        if corr:
+            by_corr[corr] = {
+                "externalSystemCorrelationId": corr,
+                "answer": a.get("answer", a.get("value", "")),
+            }
+    answers_for_ariba = list(by_corr.values())
+    if not answers_for_ariba:
+        return True, "No valid form answers to submit"
+    fill_success, fill_message = _submit_form_to_fill_api_sync(answers_for_ariba)
+    if run_browserbase:
+        form_answers_json = json.dumps(answers_for_ariba)
+        logger.info(
+            "Form answers JSON passed to Browserbase (%d items): %s",
+            len(answers_for_ariba),
+            form_answers_json,
+        )
+        if run_browserbase_in_subprocess:
+            try:
+                import subprocess
+                import sys
+                logs_dir = Path(__file__).parent / "logs"
+                logs_dir.mkdir(exist_ok=True)
+                log_path = logs_dir / f"browserbase_ariba_{int(time.time())}_{os.getpid()}.log"
+                log_file = open(log_path, "w", encoding="utf-8")
+                proc = subprocess.Popen(
+                    [sys.executable, "-m", "browser_automation.ariba_form_fill"],
+                    stdin=subprocess.PIPE,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                proc.stdin.write(form_answers_json.encode("utf-8"))
+                proc.stdin.close()
+                # Don't close log_file so the subprocess can keep writing after we exit
+                logger.info(
+                    "Browserbase form fill started in background subprocess (pid=%s); logs: %s",
+                    proc.pid,
+                    log_path,
+                )
+            except Exception as e:
+                logger.warning("Failed to start Browserbase subprocess: %s", e)
+        else:
+            try:
+                from browser_automation.ariba_form_fill import run_ariba_form_fill
+                bb_result = run_ariba_form_fill(form_answers_json=form_answers_json)
+                if bb_result.get("success"):
+                    logger.info(
+                        "Browserbase form fill completed: session_id=%s live_url=%s",
+                        bb_result.get("session_id"),
+                        bb_result.get("live_url"),
+                    )
+                else:
+                    logger.warning(
+                        "Browserbase form fill failed: %s",
+                        bb_result.get("error") or bb_result.get("message"),
+                    )
+            except Exception as e:
+                logger.warning("Browserbase form fill failed: %s", e)
+    else:
+        logger.info(
+            "Flush on session close: Ariba submit done; Browserbase skipped (use end_call or trigger_browserbase_session for browser fill)"
+        )
+    return fill_success, fill_message
 
 
 def load_form_for_prompt(default_json_path: str = "form_supplier_general_info.json") -> dict[str, Any]:
@@ -849,6 +938,7 @@ class OutboundCaller(Agent):
                 ## TOOL CALL BEHAVIOR
                 Do NOT say any waiting phrase before end_call or submit_form_answers - call them silently.
                 When calling submit_form_answers send the user answers in English, if they are not in English, convert them to English. Pass **only** the question-answer(s) for the field you just collected — do NOT include previously submitted fields. One field per call. Use this format for each object: fieldName (from the form question name), externalSystemCorrelationId (from the form, e.g. formName/correlationId in the question list), answer (from the conversation).
+                Use trigger_browserbase_session when the user asks to open the form in a browser, or to fill the form on the Ariba web page. You may pass form_answers_json (same format as submit_form_answers) to pre-fill fields. After calling, you can tell the user the session is open and share the live_url if they want to view it.
                 
                 ## KEY RULES
                 - Be **polite and calm in every situation** — respond in a very polite way at all times.
@@ -876,6 +966,9 @@ class OutboundCaller(Agent):
         
         # Transcript capture
         self.transcript: list[dict] = []
+        # Collected form answers during conversation; flushed to form fill on session end
+        self.collected_form_answers: list[dict[str, Any]] = []
+        self._form_answers_flushed: bool = False
         # Room reference for publishing transcript data messages (set in entrypoint)
         self.room: Any = None
 
@@ -956,14 +1049,20 @@ class OutboundCaller(Agent):
             speech_handle = ctx.session.say("Dhanyavaad aapke time ke liye. Aapka din accha ho!", allow_interruptions=False)
             await speech_handle.wait_for_playout()
         
+        # Flush collected form answers to Ariba API and Browserbase form fill (once)
+        if not self._form_answers_flushed and self.collected_form_answers:
+            self._form_answers_flushed = True
+            to_flush = list(self.collected_form_answers)
+            await asyncio.to_thread(_flush_collected_form_answers_sync, to_flush)
+        
         await self.hangup()
 
     @function_tool()
     async def submit_form_answers(self, ctx: RunContext, form_answers_json: str) -> dict:
         """
-        MANDATORY: Call this at the end of the call (when form is complete or when ending) to submit
-        all collected question-answer pairs in JSON format. This publishes the form answers to the
-        room so subscribers can consume them.
+        MANDATORY: Call this after each field (or batch) to record the user's answer. Answers are
+        stored in a list and published to the room. When the call ends, all collected answers are
+        submitted to the form fill (Ariba API and optional Browserbase session) in one go.
 
         Args:
             form_answers_json: A JSON string: array of objects, each with:
@@ -980,6 +1079,18 @@ class OutboundCaller(Agent):
             answers = json.loads(form_answers_json)
             if not isinstance(answers, list):
                 answers = [answers]
+            # Normalize and append to collected list (same field updated = last wins when we flush)
+            for a in answers:
+                self.collected_form_answers.append({
+                    "fieldName": a.get("fieldName", ""),
+                    "externalSystemCorrelationId": (
+                        a.get("externalSystemCorrelationId")
+                        or a.get("correlationId")
+                        or a.get("formName")
+                        or ""
+                    ),
+                    "answer": a.get("answer", a.get("value", "")),
+                })
             payload = {
                 "event": "form_answers",
                 "role": "agent",
@@ -988,34 +1099,17 @@ class OutboundCaller(Agent):
             }
             if self.room:
                 await _publish_transcript_to_room(self.room, payload)
-            logger.info("Published form_answers to room: %d Q&A pairs", len(answers))
-
-            # Submit to Ariba: send only externalSystemCorrelationId and answer (not fieldName)
-            answers_for_ariba = [
-                {
-                    "externalSystemCorrelationId": (
-                        a.get("externalSystemCorrelationId")
-                        or a.get("correlationId")
-                        or a.get("formName")
-                        or ""
-                    ),
-                    "answer": a.get("answer", a.get("value", "")),
-                }
-                for a in answers
-            ]
-            fill_success, fill_message = _submit_form_to_fill_api_sync(answers_for_ariba)
-
-            if not fill_success:
-                logger.warning("Form fill API failed: %s", fill_message)
-            else:
-                logger.info("Form fill API: %s", fill_message)
-
-            msg = f"Submitted {len(answers)} form answers to room"
-            if fill_success and "skipped" not in fill_message.lower():
-                msg += f"; {fill_message}"
-            elif not fill_success:
-                msg += f"; fill API error: {fill_message}"
-            return {"success": True, "message": msg, "count": len(answers)}
+            logger.info(
+                "Collected form_answers (total %d): added %d Q&A pairs",
+                len(self.collected_form_answers),
+                len(answers),
+            )
+            return {
+                "success": True,
+                "message": f"Recorded {len(answers)} answer(s); total collected: {len(self.collected_form_answers)}. Will submit all when call ends.",
+                "count": len(answers),
+                "total_collected": len(self.collected_form_answers),
+            }
         except json.JSONDecodeError as e:
             logger.warning("submit_form_answers invalid JSON: %s", e)
             return {"success": False, "error": f"Invalid JSON: {e}"}
@@ -1033,7 +1127,37 @@ class OutboundCaller(Agent):
         """
         product = get_product_from_json(model_name)
         return product
-    
+
+    @function_tool()
+    async def trigger_browserbase_session(
+        self, ctx: RunContext, form_answers_json: str = ""
+    ) -> dict[str, Any]:
+        """Start a Browserbase browser session, open the Ariba login page, log in with configured credentials,
+        and optionally fill the form with the given answers. Use this when the user or workflow requires
+        filling the supplier form in the actual Ariba web UI (e.g. for verification or manual follow-up).
+        Session runs in region ap-southeast-1. Returns session_id and live_url for viewing the browser.
+
+        Args:
+            form_answers_json: Optional JSON string - array of objects with externalSystemCorrelationId and answer
+                (same format as submit_form_answers). If provided, the script will attempt to fill these in the form.
+
+        Returns:
+            JSON with success, session_id, live_url, message, and optional error.
+        """
+        from browser_automation.ariba_form_fill import run_ariba_form_fill
+
+        result = await asyncio.to_thread(
+            run_ariba_form_fill,
+            form_answers_json=form_answers_json or None,
+        )
+        logger.info(
+            "trigger_browserbase_session result: success=%s session_id=%s",
+            result.get("success"),
+            result.get("session_id"),
+        )
+        return result
+
+
 async def entrypoint(ctx: JobContext):
     logger.info(f"connecting to room {ctx.room.name}")
     await ctx.connect()
@@ -1167,6 +1291,18 @@ async def entrypoint(ctx: JobContext):
     @session.on("close")
     def on_session_close():
         logger.info(f"Session closed for room {room_id}")
+        # Flush collected form answers; run Browserbase in subprocess so it completes after worker exits
+        if not agent._form_answers_flushed and agent.collected_form_answers:
+            agent._form_answers_flushed = True
+            to_flush = list(agent.collected_form_answers)
+            asyncio.create_task(
+                asyncio.to_thread(
+                    _flush_collected_form_answers_sync,
+                    to_flush,
+                    True,   # run_browserbase
+                    True,   # run_browserbase_in_subprocess
+                )
+            )
         if lead_id and not agent.call_outcome_written:
             logger.warning(f"Session ended without outcome recorded for lead {lead_id}. Recording as not_connected.")
             agent.call_outcome_written = True
@@ -1372,6 +1508,6 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="tatachem-v2v-agent",
+            agent_name="brian-tatachem2",
         )
     )

@@ -1,0 +1,7 @@
+[
+  {"externalSystemCorrelationId": "supplierName1", "answer": "ggwp"},
+  {"externalSystemCorrelationId": "primaryContactFirstName", "answer": "Test"},
+  {"externalSystemCorrelationId": "primaryContactLastName", "answer": "User"},
+  {"externalSystemCorrelationId": "primaryContactMobile", "answer": "9876543210"},
+  {"externalSystemCorrelationId": "primaryContactEmail", "answer": "test@example.com"}
+]
