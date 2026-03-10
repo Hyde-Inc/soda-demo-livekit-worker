@@ -1,7 +1,7 @@
 [
-  {"externalSystemCorrelationId": "supplierName1", "answer": "ggwp"},
-  {"externalSystemCorrelationId": "primaryContactFirstName", "answer": "Test"},
-  {"externalSystemCorrelationId": "primaryContactLastName", "answer": "User"},
-  {"externalSystemCorrelationId": "primaryContactMobile", "answer": "9876543210"},
-  {"externalSystemCorrelationId": "primaryContactEmail", "answer": "test@example.com"}
+  {"externalSystemCorrelationId": "supplierName2", "answer": "ABC"},
+  {"externalSystemCorrelationId": "supplierBrandName", "answer": "Unspecified"},
+  {"externalSystemCorrelationId": "primaryContactFirstName", "answer": "Yash"},
+  {"externalSystemCorrelationId": "primaryContactLastName", "answer": "Singh"},
+  {"externalSystemCorrelationId": "primaryContactMobile", "answer": "8433568933"}
 ]

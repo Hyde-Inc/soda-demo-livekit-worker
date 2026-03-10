@@ -44,6 +44,48 @@ def _load_form_label_map() -> dict[str, str]:
     return _FORM_LABEL_MAP
 
 
+def _fill_by_label_exact_then_tr(page: Any, frame: Any, label: str, value: str) -> bool:
+    """Find element with exact label text, walk up to nearest ancestor tr that has an input, fill it. Tries frame then page. Returns True if filled."""
+    js = """
+    ([label, value]) => {
+        const candidates = Array.from(document.querySelectorAll('*')).filter(e => {
+            const t = (e.textContent || '').trim().replace(/\\s+/g, ' ');
+            return t === label || t.endsWith(' ' + label) || (t.includes(label) && t.length < 200);
+        });
+        const el = candidates.length ? candidates.reduce((a, b) =>
+            (a.textContent || '').length < (b.textContent || '').length ? a : b
+        ) : null;
+        if (!el) return false;
+        let tr = el.closest('tr');
+        while (tr) {
+            const inp = tr.querySelector('input:not([type=hidden]), textarea, select');
+            if (inp) {
+                inp.focus();
+                inp.value = value;
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                inp.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+            }
+            tr = tr.parentElement && tr.parentElement.closest('tr');
+        }
+        return false;
+    }
+    """
+    args = [label, value]
+    try:
+        fr = page.frame(name="SMFrame")
+        if fr and fr.evaluate(js, args):
+            return True
+    except Exception:
+        pass
+    try:
+        if page.evaluate(js, args):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def run_ariba_form_fill(
     form_answers_json: str | None = None,
     navigation_timeout_ms: int = 60_000,
@@ -400,6 +442,7 @@ def run_ariba_form_fill(
                 answers = json.loads(form_answers_json)
                 if isinstance(answers, list):
                     label_map = _load_form_label_map()
+                    filled_count = 0
                     for item in answers:
                         corr_id = item.get("externalSystemCorrelationId") or item.get(
                             "correlationId", ""
@@ -411,7 +454,8 @@ def run_ariba_form_fill(
                         if not value:
                             continue
                         filled = False
-                        # Try page and frame; try id/name/data attr then label
+                        label = label_map.get(corr_id)
+                        # Try page and frame; try id/name/data attr, then label, then row-with-label
                         for ctx in (page, frame):
                             if filled:
                                 break
@@ -427,41 +471,56 @@ def run_ariba_form_fill(
                                     if el.count() > 0:
                                         el.fill(value)
                                         filled = True
-                                        logger.debug("Filled %s by selector", corr_id)
+                                        filled_count += 1
+                                        logger.info("Filled %s by selector", corr_id)
                                         break
                                 except Exception:
                                     pass
                             if filled:
                                 break
-                            # Label fallback (Ariba uses labels like "Primary Supplier Contact First Name")
-                            label = label_map.get(corr_id)
                             if label:
                                 try:
                                     el = ctx.get_by_label(label).first
                                     if el.count() > 0:
                                         el.fill(value)
                                         filled = True
-                                        logger.debug("Filled %s by label %s", corr_id, label)
+                                        filled_count += 1
+                                        logger.info("Filled %s by label %s", corr_id, label)
+                                        break
+                                except Exception:
+                                    pass
+                            if filled:
+                                break
+                            # Label-exact + walk up: find element with exact label text, then nearest ancestor tr that has an input.
+                            # Ariba uses nested tables so tr.filter(has_text) can match a huge row; we need the input for this question only.
+                            if label:
+                                try:
+                                    if _fill_by_label_exact_then_tr(page, frame, label, value):
+                                        filled = True
+                                        filled_count += 1
+                                        logger.info("Filled %s by label-exact (label %s)", corr_id, label)
                                         break
                                 except Exception:
                                     pass
                         if not filled:
-                            logger.debug("No element found for correlationId %s", corr_id)
+                            logger.warning("No element found for correlationId %s (label: %s)", corr_id, label_map.get(corr_id, ""))
                     if answers:
-                        form_was_filled = True
-                        logger.info("Filled %d form field(s) from JSON", len(answers))
+                        logger.info("Form fill: %d of %d field(s) filled from JSON", filled_count, len(answers))
+                        form_was_filled = filled_count > 0
             except json.JSONDecodeError as e:
                 logger.warning("Invalid form_answers_json: %s", e)
 
-        # Click "Submit Entire Response" after filling (page3: button title="Submit Entire Response")
+        # Click "Submit Entire Response" after filling (page4: button in specialButtonRow, title="Submit Entire Response")
         if form_was_filled:
             try:
                 submit_btn = None
                 for loc in [
-                    page.locator('button[title="Submit Entire Response"]').first,
-                    page.locator('button:has-text("Submit Entire Response")').first,
                     frame.locator('button[title="Submit Entire Response"]').first,
+                    frame.locator('button.w-btn-primary:has-text("Submit Entire Response")').first,
                     frame.locator('button:has-text("Submit Entire Response")').first,
+                    page.locator('button[title="Submit Entire Response"]').first,
+                    page.locator('button.w-btn-primary:has-text("Submit Entire Response")').first,
+                    page.locator('button:has-text("Submit Entire Response")').first,
                 ]:
                     try:
                         loc.wait_for(state="visible", timeout=8000)
