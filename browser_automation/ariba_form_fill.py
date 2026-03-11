@@ -11,9 +11,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +85,81 @@ def _fill_by_label_exact_then_tr(page: Any, frame: Any, label: str, value: str) 
     return False
 
 
+def create_browserbase_session() -> dict[str, Any]:
+    """
+    Create a Browserbase session only (no Playwright, no form fill). Returns session_id, connect_url, live_url.
+    Used so the main process can publish the session to the room before spawning the form-fill subprocess.
+    """
+    try:
+        from browserbase import Browserbase
+    except ImportError:
+        return {
+            "success": False,
+            "session_id": None,
+            "connect_url": None,
+            "live_url": None,
+            "message": "browserbase not installed",
+            "error": "pip install browserbase",
+        }
+    api_key = os.environ.get("BROWSERBASE_API_KEY", "").strip()
+    project_id = os.environ.get("BROWSERBASE_PROJECT_ID", "").strip()
+    if not api_key or not project_id:
+        return {
+            "success": False,
+            "session_id": None,
+            "connect_url": None,
+            "live_url": None,
+            "message": "Browserbase not configured",
+            "error": "Missing BROWSERBASE_API_KEY or BROWSERBASE_PROJECT_ID",
+        }
+    try:
+        bb = Browserbase(api_key=api_key)
+        session = bb.sessions.create(
+            project_id=project_id,
+            region=BROWSERBASE_REGION,
+        )
+        session_id = session.id
+        connect_url = session.connect_url or ""
+        if not connect_url:
+            return {
+                "success": False,
+                "session_id": session_id,
+                "connect_url": None,
+                "live_url": None,
+                "message": "Session created but no connect URL",
+                "error": "Session object missing connect_url",
+            }
+        try:
+            links = bb.sessions.debug(session_id)
+            live_url = links.debugger_fullscreen_url or links.debugger_url or f"https://www.browserbase.com/sessions/{session_id}"
+        except Exception as e:
+            logger.warning("Could not get debugger URL: %s", e)
+            live_url = f"https://www.browserbase.com/sessions/{session_id}"
+        return {
+            "success": True,
+            "session_id": session_id,
+            "connect_url": connect_url,
+            "live_url": live_url,
+            "message": "Session created",
+        }
+    except Exception as e:
+        logger.exception("create_browserbase_session failed")
+        return {
+            "success": False,
+            "session_id": None,
+            "connect_url": None,
+            "live_url": None,
+            "message": str(e),
+            "error": str(e),
+        }
+
+
 def run_ariba_form_fill(
     form_answers_json: str | None = None,
     navigation_timeout_ms: int = 60_000,
+    on_session_ready: Callable[[str, str | None], None] | None = None,
+    existing_session_id: str | None = None,
+    existing_connect_url: str | None = None,
 ) -> dict[str, Any]:
     """
     Create a Browserbase session (region ap-southeast-1), connect via Playwright CDP,
@@ -98,12 +169,14 @@ def run_ariba_form_fill(
     Args:
         form_answers_json: Optional JSON string - list of {"externalSystemCorrelationId": str, "answer": str}.
         navigation_timeout_ms: Timeout for page loads (default 60s).
+        on_session_ready: Optional callback(session_id, live_url) invoked as soon as the session
+            and live view URL are ready (before browser connect/form fill). Use to publish to room immediately.
+        existing_session_id: When provided with existing_connect_url, connect to this session instead of creating one.
+        existing_connect_url: CDP connect URL for the existing session (from create_browserbase_session).
 
     Returns:
         Dict with keys: success (bool), session_id (str | None), live_url (str | None),
-        message (str), error (str | None), last_page_url (str | None), last_page_html (str | None),
-        last_frame_html (str | None). Last-page fields hold the final URL and HTML (main page and
-        SMFrame iframe) so the caller can inspect and guide next common steps.
+        message (str), error (str | None).
     """
     try:
         from browserbase import Browserbase
@@ -143,35 +216,47 @@ def run_ariba_form_fill(
 
     session_id: str | None = None
     live_url: str | None = None
+    connect_url: str | None = None
     playwright = None
     browser = None
 
     try:
-        bb = Browserbase(api_key=api_key)
-        session = bb.sessions.create(
-            project_id=project_id,
-            region=BROWSERBASE_REGION,
-        )
-        session_id = session.id
-        connect_url = session.connect_url
-        if not connect_url:
-            return {
-                "success": False,
-                "session_id": session_id,
-                "live_url": None,
-                "message": "Session created but no connect URL",
-                "error": "Session object missing connect_url",
-            }
+        if existing_session_id and existing_connect_url:
+            session_id = existing_session_id
+            connect_url = existing_connect_url
+            live_url = f"https://www.browserbase.com/sessions/{session_id}"
+        else:
+            bb = Browserbase(api_key=api_key)
+            session = bb.sessions.create(
+                project_id=project_id,
+                region=BROWSERBASE_REGION,
+            )
+            session_id = session.id
+            connect_url = session.connect_url
+            if not connect_url:
+                return {
+                    "success": False,
+                    "session_id": session_id,
+                    "live_url": None,
+                    "message": "Session created but no connect URL",
+                    "error": "Session object missing connect_url",
+                }
 
-        # Debugger URL for live view (from Browserbase API)
-        try:
-            links = bb.sessions.debug(session_id)
-            live_url = links.debugger_fullscreen_url or links.debugger_url
-        except Exception as e:
-            logger.warning("Could not get debugger URL: %s", e)
-            live_url = f"https://www.browserbase.com/sessions/{session_id}"
-        if not live_url and session_id:
-            live_url = f"https://www.browserbase.com/sessions/{session_id}"
+            # Debugger URL for live view (from Browserbase API)
+            try:
+                links = bb.sessions.debug(session_id)
+                live_url = links.debugger_fullscreen_url or links.debugger_url
+            except Exception as e:
+                logger.warning("Could not get debugger URL: %s", e)
+                live_url = f"https://www.browserbase.com/sessions/{session_id}"
+            if not live_url and session_id:
+                live_url = f"https://www.browserbase.com/sessions/{session_id}"
+
+            if on_session_ready and session_id:
+                try:
+                    on_session_ready(session_id, live_url)
+                except Exception as e:
+                    logger.warning("on_session_ready callback failed: %s", e)
 
         playwright = sync_playwright().start()
         browser = playwright.chromium.connect_over_cdp(connect_url)
@@ -245,22 +330,6 @@ def run_ariba_form_fill(
 
         # Frame reference for form/dashboard content (used for supplier steps and form fill)
         frame = page.frame_locator("#SMFrame")
-
-        # Debug: dump URL and page HTML after login for manual inspection
-        try:
-            url_after_login = page.url
-            html_after_login = page.content()
-            logger.info("After login — URL: %s", url_after_login)
-            snippet_len = 1500
-            logger.info("After login — HTML snippet (first %d chars):\n%s", snippet_len, html_after_login[:snippet_len] if html_after_login else "(empty)")
-            logs_dir = Path(__file__).resolve().parent.parent / "logs"
-            logs_dir.mkdir(parents=True, exist_ok=True)
-            dump_name = f"ariba_after_login_{int(time.time())}.html"
-            dump_path = logs_dir / dump_name
-            dump_path.write_text(html_after_login, encoding="utf-8")
-            logger.info("After login — full HTML saved to: %s", dump_path)
-        except Exception as e:
-            logger.warning("Could not dump post-login HTML: %s", e)
 
         # After login: click the link/element for "Supplier General Information" (e.g. "ABC Industries")
         _supplier_name: str | None = None
@@ -510,46 +579,126 @@ def run_ariba_form_fill(
             except json.JSONDecodeError as e:
                 logger.warning("Invalid form_answers_json: %s", e)
 
-        # Click "Submit Entire Response" after filling (page4: button in specialButtonRow, title="Submit Entire Response")
-        if form_was_filled:
+        # Always click "Submit Entire Response" when we have form answers (fields may have been filled by JS without tracking)
+        if form_answers_json:
+            submit_clicked = False
+            page.wait_for_timeout(2000)
+            # 1) Direct locator on page with force click
             try:
-                submit_btn = None
-                for loc in [
-                    frame.locator('button[title="Submit Entire Response"]').first,
-                    frame.locator('button.w-btn-primary:has-text("Submit Entire Response")').first,
-                    frame.locator('button:has-text("Submit Entire Response")').first,
-                    page.locator('button[title="Submit Entire Response"]').first,
-                    page.locator('button.w-btn-primary:has-text("Submit Entire Response")').first,
-                    page.locator('button:has-text("Submit Entire Response")').first,
-                ]:
+                btn = page.locator('button[title="Submit Entire Response"]').first
+                btn.scroll_into_view_if_needed(timeout=5000)
+                btn.click(timeout=5000, force=True)
+                submit_clicked = True
+                logger.info("Clicked Submit Entire Response (page locator)")
+            except Exception as e:
+                logger.warning("Submit page locator failed: %s", e)
+            # 2) get_by_role
+            if not submit_clicked:
+                try:
+                    btn = page.get_by_role("button", name="Submit Entire Response").first
+                    btn.scroll_into_view_if_needed(timeout=5000)
+                    btn.click(timeout=5000, force=True)
+                    submit_clicked = True
+                    logger.info("Clicked Submit Entire Response (get_by_role)")
+                except Exception as e:
+                    logger.warning("Submit get_by_role failed: %s", e)
+            # 3) JS click on main page
+            if not submit_clicked:
+                try:
+                    result = page.evaluate(
+                        """() => {
+                            const btn = document.querySelector('button[title="Submit Entire Response"]');
+                            if (btn) { btn.scrollIntoView({block:'center'}); btn.click(); return 'clicked'; }
+                            const all = Array.from(document.querySelectorAll('button'));
+                            const found = all.find(b => b.textContent.replace(/\\s+/g,' ').trim() === 'Submit Entire Response');
+                            if (found) { found.scrollIntoView({block:'center'}); found.click(); return 'clicked-text'; }
+                            return 'not-found: ' + all.length + ' buttons, titles: ' + all.slice(0,10).map(b=>b.title||b.textContent.trim().slice(0,30)).join(', ');
+                        }"""
+                    )
+                    logger.info("Submit JS result: %s", result)
+                    if result and result.startswith("clicked"):
+                        submit_clicked = True
+                except Exception as e:
+                    logger.warning("Submit page JS failed: %s", e)
+            # 4) Try all frames
+            if not submit_clicked:
+                for f in page.frames():
+                    if f == page.main_frame:
+                        continue
                     try:
-                        loc.wait_for(state="visible", timeout=8000)
-                        submit_btn = loc
-                        break
+                        result = f.evaluate(
+                            """() => {
+                                const btn = document.querySelector('button[title="Submit Entire Response"]');
+                                if (btn) { btn.scrollIntoView({block:'center'}); btn.click(); return 'clicked'; }
+                                return 'not-found';
+                            }"""
+                        )
+                        if result and result.startswith("clicked"):
+                            submit_clicked = True
+                            logger.info("Clicked Submit Entire Response (frame %s)", f.url[:60])
+                            break
                     except Exception:
                         continue
-                if submit_btn:
-                    submit_btn.scroll_into_view_if_needed(timeout=5000)
-                    submit_btn.click(timeout=5000)
-                    page.wait_for_timeout(2000)
-                    logger.info("Clicked Submit Entire Response")
+            if not submit_clicked:
+                logger.warning("Submit Entire Response button not found or not clickable")
+            if submit_clicked:
+                page.wait_for_timeout(3000)
+                # Click OK in the "Submit this response?" / "Click OK to submit" dialog.
+                # Dialog structure: <div role="dialog">...<div class="w-dlg-buttons">...<button title="OK">
+                # There are multiple hidden OK dialogs; we need the visible one with "Submit this response?" title.
+                ok_clicked = False
+                # 1) Wait for dialog with "Submit this response?" to become visible, then Playwright-click its OK
+                try:
+                    dialog = page.locator('[role="dialog"]:has-text("Submit this response")').first
+                    dialog.wait_for(state="visible", timeout=10000)
+                    ok_btn = dialog.locator('button[title="OK"]').first
+                    ok_btn.wait_for(state="visible", timeout=5000)
+                    ok_btn.click(timeout=5000)
+                    ok_clicked = True
+                    logger.info("Clicked OK after Submit (role=dialog)")
+                except Exception as e:
+                    logger.debug("OK role=dialog: %s", e)
+                # 2) Try w-dlg-dialog with "Click OK to submit"
+                if not ok_clicked:
+                    try:
+                        dialog = page.locator('.w-dlg-dialog:has-text("Click OK to submit")').first
+                        dialog.wait_for(state="visible", timeout=5000)
+                        ok_btn = dialog.locator('button[title="OK"]').first
+                        ok_btn.wait_for(state="visible", timeout=5000)
+                        ok_btn.click(timeout=5000)
+                        ok_clicked = True
+                        logger.info("Clicked OK after Submit (w-dlg-dialog)")
+                    except Exception as e:
+                        logger.debug("OK w-dlg-dialog: %s", e)
+                # 3) Click whichever OK button is currently visible (Playwright checks visibility)
+                if not ok_clicked:
+                    try:
+                        all_ok = page.locator('button[title="OK"]')
+                        n = all_ok.count()
+                        for i in range(n):
+                            btn = all_ok.nth(i)
+                            if btn.is_visible():
+                                btn.click(timeout=5000)
+                                ok_clicked = True
+                                logger.info("Clicked OK after Submit (visible button #%d)", i)
+                                break
+                    except Exception as e:
+                        logger.debug("OK visible loop: %s", e)
+                if ok_clicked:
+                    # Wait for page to load/redirect after submission
+                    try:
+                        page.wait_for_load_state("domcontentloaded", timeout=20000)
+                        page.wait_for_load_state("load", timeout=20000)
+                        try:
+                            page.wait_for_load_state("networkidle", timeout=20000)
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    page.wait_for_timeout(3000)
+                    logger.info("Post-submit page loaded. URL: %s", page.url)
                 else:
-                    logger.warning("Submit Entire Response button not found")
-            except Exception as e:
-                logger.warning("Could not click Submit Entire Response: %s", e)
-
-        # Capture last page URL and HTML so caller can inspect and guide next steps
-        last_page_url: str | None = None
-        last_page_html: str | None = None
-        last_frame_html: str | None = None
-        try:
-            last_page_url = page.url
-            last_page_html = page.content()
-            sm_frame = page.frame(name="SMFrame")
-            if sm_frame:
-                last_frame_html = sm_frame.content()
-        except Exception as e:
-            logger.debug("Could not capture last page HTML: %s", e)
+                    logger.warning("OK button after Submit not found or not clickable")
 
         logger.info(
             "Session done. View replay & steps: https://www.browserbase.com/sessions/%s",
@@ -559,11 +708,8 @@ def run_ariba_form_fill(
             "success": True,
             "session_id": session_id,
             "live_url": live_url,
-            "message": "Browser session started; Ariba login and form fill attempted.",
+            "message": "Browser session started; Ariba login and form fill completed.",
             "error": None,
-            "last_page_url": last_page_url,
-            "last_page_html": last_page_html,
-            "last_frame_html": last_frame_html,
         }
     except Exception as e:
         logger.exception("ariba_form_fill failed")
@@ -573,9 +719,6 @@ def run_ariba_form_fill(
             "live_url": live_url,
             "message": str(e),
             "error": str(e),
-            "last_page_url": None,
-            "last_page_html": None,
-            "last_frame_html": None,
         }
     finally:
         if browser:
@@ -591,7 +734,9 @@ def run_ariba_form_fill(
 
 
 if __name__ == "__main__":
-    """CLI entrypoint: read form_answers_json from stdin, run form fill, print JSON result. Used for subprocess so Browserbase can complete after worker exits. Logs go to stderr (parent may redirect to a file)."""
+    """CLI entrypoint: read stdin (JSON object or raw form_answers_json string), run form fill, print JSON result.
+    When parent passes {"form_answers_json": "...", "session_id": "...", "connect_url": "..."}, connects to
+    existing session instead of creating one (used after publishing session to room)."""
     import sys
     logging.basicConfig(
         level=logging.INFO,
@@ -600,7 +745,30 @@ if __name__ == "__main__":
         stream=sys.stderr,
     )
     raw = sys.stdin.read().strip() if not sys.stdin.isatty() else ""
-    form_answers_json = raw if raw else None
-    logger.info("Received form_answers_json from stdin (length=%s): %s", len(raw) if raw else 0, form_answers_json)
-    result = run_ariba_form_fill(form_answers_json=form_answers_json)
+    form_answers_json = None
+    existing_session_id = None
+    existing_connect_url = None
+    if raw:
+        try:
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                form_answers_json = payload.get("form_answers_json")
+                if isinstance(form_answers_json, list):
+                    form_answers_json = json.dumps(form_answers_json)
+                existing_session_id = payload.get("session_id")
+                existing_connect_url = payload.get("connect_url")
+            else:
+                form_answers_json = raw
+        except json.JSONDecodeError:
+            form_answers_json = raw
+    logger.info(
+        "Stdin: form_answers_json length=%s, existing_session=%s",
+        len(form_answers_json) if form_answers_json else 0,
+        bool(existing_session_id and existing_connect_url),
+    )
+    result = run_ariba_form_fill(
+        form_answers_json=form_answers_json,
+        existing_session_id=existing_session_id or None,
+        existing_connect_url=existing_connect_url or None,
+    )
     print(json.dumps(result), flush=True)

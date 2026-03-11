@@ -636,6 +636,102 @@ def _flush_collected_form_answers_sync(
     return fill_success, fill_message
 
 
+def _flush_ariba_and_create_browserbase_session_sync(
+    collected: list[dict[str, Any]],
+) -> tuple[bool, str, str | None, dict[str, Any] | None]:
+    """
+    Dedupe form answers, submit to Ariba API, then create a Browserbase session (no form fill).
+    Returns (fill_success, fill_message, form_answers_json_for_subprocess, session_result_dict or None).
+    Used on session close so we can publish the session to the room before spawning the form-fill subprocess.
+    """
+    if not collected:
+        return True, "No form answers to submit", None, None
+    by_corr: dict[str, dict[str, Any]] = {}
+    for a in collected:
+        corr = (
+            a.get("externalSystemCorrelationId")
+            or a.get("correlationId")
+            or a.get("formName")
+            or ""
+        )
+        if corr:
+            by_corr[corr] = {
+                "externalSystemCorrelationId": corr,
+                "answer": a.get("answer", a.get("value", "")),
+            }
+    answers_for_ariba = list(by_corr.values())
+    if not answers_for_ariba:
+        return True, "No valid form answers to submit", None, None
+    fill_success, fill_message = _submit_form_to_fill_api_sync(answers_for_ariba)
+    form_answers_json = json.dumps(answers_for_ariba)
+    logger.info(
+        "Form answers JSON for Browserbase (%d items): %s",
+        len(answers_for_ariba),
+        form_answers_json,
+    )
+    from browser_automation.ariba_form_fill import create_browserbase_session
+    session_result = create_browserbase_session()
+    return fill_success, fill_message, form_answers_json, session_result
+
+
+async def _flush_publish_browserbase_then_subprocess(
+    collected: list[dict[str, Any]],
+    room: Any,
+) -> None:
+    """
+    On session close: flush to Ariba, create Browserbase session, publish session_id to room
+    (so participants get the link before disconnect), then spawn subprocess to do form fill in that session.
+    """
+    fill_success, fill_message, form_answers_json, session_result = await asyncio.to_thread(
+        _flush_ariba_and_create_browserbase_session_sync,
+        collected,
+    )
+    if session_result and session_result.get("success") and room:
+        session_id = session_result.get("session_id")
+        if session_id:
+            await _publish_browserbase_session_to_room(room, session_id)
+            logger.info(
+                "Published browserbase_session to room before subprocess (session_id=%s); starting form-fill subprocess",
+                session_id,
+            )
+    # Spawn subprocess: with existing session so it connects and fills; without session it would create its own
+    if form_answers_json and session_result and session_result.get("success"):
+        subprocess_payload = {
+            "form_answers_json": form_answers_json,
+            "session_id": session_result.get("session_id"),
+            "connect_url": session_result.get("connect_url"),
+        }
+        stdin_data = json.dumps(subprocess_payload).encode("utf-8")
+    elif form_answers_json:
+        # Fallback: no session created (e.g. API error); subprocess will create its own (room already closed)
+        stdin_data = form_answers_json.encode("utf-8")
+    else:
+        return
+    try:
+        import subprocess
+        import sys
+        logs_dir = Path(__file__).parent / "logs"
+        logs_dir.mkdir(exist_ok=True)
+        log_path = logs_dir / f"browserbase_ariba_{int(time.time())}_{os.getpid()}.log"
+        log_file = open(log_path, "w", encoding="utf-8")
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "browser_automation.ariba_form_fill"],
+            stdin=subprocess.PIPE,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        proc.stdin.write(stdin_data)
+        proc.stdin.close()
+        logger.info(
+            "Browserbase form fill started in background subprocess (pid=%s); logs: %s",
+            proc.pid,
+            log_path,
+        )
+    except Exception as e:
+        logger.warning("Failed to start Browserbase subprocess: %s", e)
+
+
 def load_form_for_prompt(default_json_path: str = "form_supplier_general_info.json") -> dict[str, Any]:
     """
     Load form for the agent prompt: from Ariba API if auth credentials are set, otherwise from JSON file.
@@ -656,6 +752,8 @@ logger.setLevel(logging.INFO)
 
 # Topic for transcript data messages on LiveKit (subscribers can filter by this)
 TRANSCRIPT_TOPIC = "transcript"
+# Topic for browserbase session data (sessionId for viewing in room)
+BROWSERBASE_SESSION_TOPIC = "browserbase_session"
 
 
 async def _publish_transcript_to_room(room: Any, payload: dict) -> None:
@@ -670,6 +768,36 @@ async def _publish_transcript_to_room(room: Any, payload: dict) -> None:
         await local.publish_data(data, topic=TRANSCRIPT_TOPIC)
     except Exception as e:
         logger.warning(f"Failed to publish transcript to room: {e}")
+
+
+async def _publish_browserbase_session_to_room(room: Any, session_id: str) -> None:
+    """Publish browserbase session for viewing in the room (event + sessionId + timestamp)."""
+    if room is None:
+        return
+    try:
+        local = getattr(room, "local_participant", None)
+        if local is None:
+            return
+        payload = {
+            "event": "browserbase_session",
+            "sessionId": session_id,
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        }
+        logger.info(
+            "Publishing browserbase_session to room (topic=%s): %s",
+            BROWSERBASE_SESSION_TOPIC,
+            payload,
+        )
+        data = json.dumps(payload).encode("utf-8")
+        await local.publish_data(data, topic=BROWSERBASE_SESSION_TOPIC)
+        logger.info(
+            "Published browserbase_session to room: event=%s sessionId=%s timestamp=%s",
+            payload["event"],
+            payload["sessionId"],
+            payload["timestamp"],
+        )
+    except Exception as e:
+        logger.warning("Failed to publish browserbase session to room: %s", e)
 
 
 async def update_lead_in_db(
@@ -1146,9 +1274,20 @@ class OutboundCaller(Agent):
         """
         from browser_automation.ariba_form_fill import run_ariba_form_fill
 
+        room = self.room
+        if room:
+            loop = asyncio.get_running_loop()
+            def on_session_ready(session_id: str, _live_url: str | None) -> None:
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(_publish_browserbase_session_to_room(room, session_id))
+                )
+        else:
+            on_session_ready = None
+
         result = await asyncio.to_thread(
             run_ariba_form_fill,
             form_answers_json=form_answers_json or None,
+            on_session_ready=on_session_ready,
         )
         logger.info(
             "trigger_browserbase_session result: success=%s session_id=%s",
@@ -1291,18 +1430,11 @@ async def entrypoint(ctx: JobContext):
     @session.on("close")
     def on_session_close():
         logger.info(f"Session closed for room {room_id}")
-        # Flush collected form answers; run Browserbase in subprocess so it completes after worker exits
+        # Flush to Ariba, create Browserbase session, publish to room (so link is visible before disconnect), then subprocess form fill
         if not agent._form_answers_flushed and agent.collected_form_answers:
             agent._form_answers_flushed = True
             to_flush = list(agent.collected_form_answers)
-            asyncio.create_task(
-                asyncio.to_thread(
-                    _flush_collected_form_answers_sync,
-                    to_flush,
-                    True,   # run_browserbase
-                    True,   # run_browserbase_in_subprocess
-                )
-            )
+            asyncio.create_task(_flush_publish_browserbase_then_subprocess(to_flush, agent.room))
         if lead_id and not agent.call_outcome_written:
             logger.warning(f"Session ended without outcome recorded for lead {lead_id}. Recording as not_connected.")
             agent.call_outcome_written = True
