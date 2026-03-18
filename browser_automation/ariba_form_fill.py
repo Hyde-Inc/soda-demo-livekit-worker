@@ -363,7 +363,6 @@ def run_ariba_form_fill(
                 # Supplier dashboard lives inside iframe SMFrame (see saved HTML: id="SMFrame", src=.../supplier-dashboard)
                 logger.info("Waiting for SMFrame iframe and supplier table...")
                 page.wait_for_selector("iframe#SMFrame", state="attached", timeout=15000)
-                page.wait_for_timeout(3000)
 
                 escaped = _supplier_name.replace('"', '\\"')
                 row_selector = f'md-row:has(div.link-text[title="{escaped}"])'
@@ -372,7 +371,6 @@ def run_ariba_form_fill(
                     logger.info("Supplier table row found in iframe for: %s", _supplier_name)
                 except Exception as e:
                     logger.warning("Supplier table row not found in iframe after 20s: %s", e)
-                page.wait_for_timeout(1000)
 
                 logger.info("Opening Supplier General Information for: %s", _supplier_name)
                 clicked = False
@@ -381,7 +379,7 @@ def run_ariba_form_fill(
                 try:
                     row = frame.locator(row_selector).first
                     row.locator('button[aria-label="View"]').first.click(timeout=5000)
-                    page.wait_for_timeout(2000)
+                    page.wait_for_load_state("load", timeout=15000)
                     logger.info("Clicked View for supplier: %s", _supplier_name)
                     clicked = True
                 except Exception as e:
@@ -392,7 +390,7 @@ def run_ariba_form_fill(
                         loc = frame.locator(f'div.link-text[title="{escaped}"]').first
                         loc.scroll_into_view_if_needed(timeout=3000)
                         loc.click(timeout=5000, force=True)
-                        page.wait_for_timeout(2000)
+                        page.wait_for_load_state("load", timeout=15000)
                         logger.info("Clicked supplier name for: %s", _supplier_name)
                         clicked = True
                     except Exception as e:
@@ -405,9 +403,8 @@ def run_ariba_form_fill(
                 if clicked:
                     try:
                         adv_btn = frame.locator('button#advanced-view, button[aria-label="Advanced View"]').first
-                        adv_btn.wait_for(state="visible", timeout=10000)
-                        adv_btn.click(timeout=5000)
-                        page.wait_for_timeout(2000)
+                        adv_btn.wait_for(state="visible", timeout=20000)
+                        adv_btn.click(timeout=15000)
                         logger.info("Clicked Advanced View")
                     except Exception as e:
                         logger.warning("Could not click Advanced View: %s", e)
@@ -434,7 +431,6 @@ def run_ariba_form_fill(
                         if supplier_form_link:
                             supplier_form_link.scroll_into_view_if_needed(timeout=5000)
                             supplier_form_link.click(timeout=5000)
-                            page.wait_for_timeout(1500)
                             logger.info("Clicked Supplier request form")
                             # Dropdown opens (options lazy-load); click "Prepare Response" (capital R in page3)
                             prepare_btn = None
@@ -452,7 +448,6 @@ def run_ariba_form_fill(
                                     continue
                             if prepare_btn:
                                 prepare_btn.click(timeout=5000)
-                                page.wait_for_timeout(2000)
                                 logger.info("Clicked Prepare Response")
                                 # Click "Revise Response" button: <button class="w-btn w-btn-primary" title="Revise Response">
                                 revise_btn = None
@@ -470,7 +465,6 @@ def run_ariba_form_fill(
                                         continue
                                 if revise_btn:
                                     revise_btn.click(timeout=5000)
-                                    page.wait_for_timeout(2000)
                                     logger.info("Clicked Revise Response")
                                     # Click OK button in dialog: <button class="w-btn" title="OK">
                                     ok_btn = None
@@ -488,7 +482,7 @@ def run_ariba_form_fill(
                                             continue
                                     if ok_btn:
                                         ok_btn.click(timeout=5000)
-                                        page.wait_for_timeout(2000)
+                                        page.wait_for_load_state("load", timeout=15000)
                                         logger.info("Clicked OK")
                                     else:
                                         logger.warning("OK button not found")
@@ -582,7 +576,6 @@ def run_ariba_form_fill(
         # Always click "Submit Entire Response" when we have form answers (fields may have been filled by JS without tracking)
         if form_answers_json:
             submit_clicked = False
-            page.wait_for_timeout(2000)
             # 1) Direct locator on page with force click
             try:
                 btn = page.locator('button[title="Submit Entire Response"]').first
@@ -622,7 +615,7 @@ def run_ariba_form_fill(
                     logger.warning("Submit page JS failed: %s", e)
             # 4) Try all frames
             if not submit_clicked:
-                for f in page.frames():
+                for f in page.frames:
                     if f == page.main_frame:
                         continue
                     try:
@@ -642,7 +635,6 @@ def run_ariba_form_fill(
             if not submit_clicked:
                 logger.warning("Submit Entire Response button not found or not clickable")
             if submit_clicked:
-                page.wait_for_timeout(3000)
                 # Click OK in the "Submit this response?" / "Click OK to submit" dialog.
                 # Dialog structure: <div role="dialog">...<div class="w-dlg-buttons">...<button title="OK">
                 # There are multiple hidden OK dialogs; we need the visible one with "Submit this response?" title.

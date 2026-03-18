@@ -1,7 +1,7 @@
 [
   {"externalSystemCorrelationId": "supplierName2", "answer": "ABC"},
   {"externalSystemCorrelationId": "supplierBrandName", "answer": "Unspecified"},
-  {"externalSystemCorrelationId": "primaryContactFirstName", "answer": "Yash"},
-  {"externalSystemCorrelationId": "primaryContactLastName", "answer": "Singh"},
+  {"externalSystemCorrelationId": "primaryContactFirstName", "answer": "Tom"},
+  {"externalSystemCorrelationId": "primaryContactLastName", "answer": "Cruise"},
   {"externalSystemCorrelationId": "primaryContactMobile", "answer": "8433568933"}
 ]

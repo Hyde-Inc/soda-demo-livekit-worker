@@ -1640,6 +1640,6 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="brian-tatachem2",
+            agent_name="tatachemicals-voice-calling-agent",
         )
     )
