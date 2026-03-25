@@ -1634,9 +1634,13 @@ async def entrypoint(ctx: JobContext):
 
 
 if __name__ == "__main__":
+    _agent_name = (
+        os.getenv("LIVEKIT_AGENT_NAME", "tatachemicals-voice-agent").strip()
+        or "tatachemicals-voice-agent"
+    )
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="tatachemicals-voice-agent",
+            agent_name=_agent_name,
         )
     )
