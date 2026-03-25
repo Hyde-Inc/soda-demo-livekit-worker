@@ -591,24 +591,22 @@ def _flush_collected_form_answers_sync(
             try:
                 import subprocess
                 import sys
-                logs_dir = Path(__file__).parent / "logs"
-                logs_dir.mkdir(exist_ok=True)
-                log_path = logs_dir / f"browserbase_ariba_{int(time.time())}_{os.getpid()}.log"
-                log_file = open(log_path, "w", encoding="utf-8")
+                # logs_dir = Path(__file__).parent / "logs"
+                # logs_dir.mkdir(exist_ok=True)
+                # log_path = logs_dir / f"browserbase_ariba_{int(time.time())}_{os.getpid()}.log"
+                # log_file = open(log_path, "w", encoding="utf-8")
                 proc = subprocess.Popen(
                     [sys.executable, "-m", "browser_automation.ariba_form_fill"],
                     stdin=subprocess.PIPE,
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
+                    # stdout=log_file,
+                    # stderr=subprocess.STDOUT,
                     start_new_session=True,
                 )
                 proc.stdin.write(form_answers_json.encode("utf-8"))
                 proc.stdin.close()
-                # Don't close log_file so the subprocess can keep writing after we exit
                 logger.info(
-                    "Browserbase form fill started in background subprocess (pid=%s); logs: %s",
+                    "Browserbase form fill started in background subprocess (pid=%s)",
                     proc.pid,
-                    log_path,
                 )
             except Exception as e:
                 logger.warning("Failed to start Browserbase subprocess: %s", e)
@@ -710,23 +708,22 @@ async def _flush_publish_browserbase_then_subprocess(
     try:
         import subprocess
         import sys
-        logs_dir = Path(__file__).parent / "logs"
-        logs_dir.mkdir(exist_ok=True)
-        log_path = logs_dir / f"browserbase_ariba_{int(time.time())}_{os.getpid()}.log"
-        log_file = open(log_path, "w", encoding="utf-8")
+        # logs_dir = Path(__file__).parent / "logs"
+        # logs_dir.mkdir(exist_ok=True)
+        # log_path = logs_dir / f"browserbase_ariba_{int(time.time())}_{os.getpid()}.log"
+        # log_file = open(log_path, "w", encoding="utf-8")
         proc = subprocess.Popen(
             [sys.executable, "-m", "browser_automation.ariba_form_fill"],
             stdin=subprocess.PIPE,
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
+            # stdout=log_file,
+            # stderr=subprocess.STDOUT,
             start_new_session=True,
         )
         proc.stdin.write(stdin_data)
         proc.stdin.close()
         logger.info(
-            "Browserbase form fill started in background subprocess (pid=%s); logs: %s",
+            "Browserbase form fill started in background subprocess (pid=%s)",
             proc.pid,
-            log_path,
         )
     except Exception as e:
         logger.warning("Failed to start Browserbase subprocess: %s", e)

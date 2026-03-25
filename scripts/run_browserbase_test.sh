@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
-# Run Browserbase form fill with test payload; redirect all output to logs/browserbase_test_<timestamp>.log.
+# Run Browserbase form fill with test payload; output to console only.
 # From project root:
 #   ./scripts/run_browserbase_test.sh
-# Then inspect the log for "Filled X by ..." and "Form fill: N of M field(s) filled".
+#
+# To capture to a file again:
+#   mkdir -p logs && .venv/bin/python scripts/run_browserbase_fill.py < scripts/test_browserbase_payload.json 2>&1 | tee "logs/browserbase_test_$(date +%Y%m%d_%H%M%S).log"
 
 set -e
 cd "$(dirname "$0")/.."
-mkdir -p logs
-LOG="logs/browserbase_test_$(date +%Y%m%d_%H%M%S).log"
-echo "Running form fill; output -> $LOG"
-.venv/bin/python scripts/run_browserbase_fill.py < scripts/test_browserbase_payload.json 2>&1 | tee "$LOG"
+.venv/bin/python scripts/run_browserbase_fill.py < scripts/test_browserbase_payload.json

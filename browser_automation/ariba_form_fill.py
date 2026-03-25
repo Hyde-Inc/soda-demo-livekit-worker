@@ -24,7 +24,7 @@ _FORM_NUMBER_MAP: dict[str, str] = {}
 _ADDRESS_SUBFIELD_NAMES: set[str] = set()
 _REQUIRED_FORM_NAMES: set[str] = set()
 
-LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
+# LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"  # disabled: file logging off, console only
 
 
 def _load_form_maps() -> tuple[dict[str, str], dict[str, str]]:
@@ -71,31 +71,32 @@ def _load_form_maps() -> tuple[dict[str, str], dict[str, str]]:
 
 
 def _dump_page_html(page: Any, label: str) -> str | None:
-    """Save current page HTML (main + SMFrame if present) to logs/ and return the path."""
-    try:
-        LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        ts = int(time.time())
-        main_html = page.content()
-        frame_html = ""
-        try:
-            sm_frame = page.frame(name="SMFrame")
-            if sm_frame:
-                frame_html = sm_frame.content()
-        except Exception:
-            pass
-
-        combined = f"<!-- PAGE URL: {page.url} -->\n<!-- LABEL: {label} -->\n"
-        combined += "<!-- === MAIN PAGE HTML === -->\n" + main_html
-        if frame_html:
-            combined += "\n\n<!-- === SMFRAME HTML === -->\n" + frame_html
-
-        dump_path = LOGS_DIR / f"ariba_{label}_{ts}.html"
-        dump_path.write_text(combined, encoding="utf-8")
-        logger.info("HTML dump saved: %s (url: %s)", dump_path.name, page.url)
-        return str(dump_path)
-    except Exception as e:
-        logger.warning("Could not dump HTML (%s): %s", label, e)
-        return None
+    """Disabled: was saving HTML to logs/. Re-enable block below for disk dumps."""
+    return None
+    # try:
+    #     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    #     ts = int(time.time())
+    #     main_html = page.content()
+    #     frame_html = ""
+    #     try:
+    #         sm_frame = page.frame(name="SMFrame")
+    #         if sm_frame:
+    #             frame_html = sm_frame.content()
+    #     except Exception:
+    #         pass
+    #
+    #     combined = f"<!-- PAGE URL: {page.url} -->\n<!-- LABEL: {label} -->\n"
+    #     combined += "<!-- === MAIN PAGE HTML === -->\n" + main_html
+    #     if frame_html:
+    #         combined += "\n\n<!-- === SMFRAME HTML === -->\n" + frame_html
+    #
+    #     dump_path = LOGS_DIR / f"ariba_{label}_{ts}.html"
+    #     dump_path.write_text(combined, encoding="utf-8")
+    #     logger.info("HTML dump saved: %s (url: %s)", dump_path.name, page.url)
+    #     return str(dump_path)
+    # except Exception as e:
+    #     logger.warning("Could not dump HTML (%s): %s", label, e)
+    #     return None
 
 
 def _fill_text_by_number(page: Any, qnum: str, label: str, value: str) -> bool:
@@ -350,8 +351,6 @@ def run_ariba_form_fill(
     Create a Browserbase session, connect via Playwright CDP,
     navigate to Ariba login URL, log in, then perform post-login steps.
 
-    The last page HTML is saved to logs/ for inspection.
-
     Returns:
         Dict with keys: success (bool), session_id (str | None), live_url (str | None),
         message (str), error (str | None).
@@ -514,8 +513,8 @@ def run_ariba_form_fill(
         except Exception:
             logger.info("No 'additional info' banner found, continuing")
 
-        # ── Dump current page for inspection ──
-        _dump_page_html(page, "after_login")
+        # ── Dump current page for inspection (disabled: _dump_page_html is no-op) ──
+        # _dump_page_html(page, "after_login")
 
         # ── Fill form fields ──
         filled_count = 0
@@ -664,7 +663,7 @@ def run_ariba_form_fill(
                 except Exception as e:
                     logger.warning("Could not click Save draft: %s", e)
 
-        _dump_page_html(page, "after_fill")
+        # _dump_page_html(page, "after_fill")
 
         action = "Submitted" if submitted else ("Saved draft" if saved_draft else "No action")
         logger.info(
