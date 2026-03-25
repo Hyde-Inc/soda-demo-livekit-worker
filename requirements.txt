@@ -33,3 +33,6 @@ pwdlib[argon2]
 pyjwt
 python-dotenv~=1.0
 requests
+
+browserbase
+playwright
