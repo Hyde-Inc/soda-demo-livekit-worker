@@ -11,85 +11,270 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-# Region for proximity to Indian suppliers (same as enterprise-browser-agent)
 BROWSERBASE_REGION = "ap-southeast-1"
 
-# Form field mapping: formName (externalSystemCorrelationId) -> label text for get_by_label
 _FORM_LABEL_MAP: dict[str, str] = {}
+_FORM_NUMBER_MAP: dict[str, str] = {}
+_ADDRESS_SUBFIELD_NAMES: set[str] = set()
+_REQUIRED_FORM_NAMES: set[str] = set()
+
+LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
 
 
-def _load_form_label_map() -> dict[str, str]:
-    """Load formName -> field name (label) from form_supplier_general_info.json for label-based fill."""
-    global _FORM_LABEL_MAP
+def _load_form_maps() -> tuple[dict[str, str], dict[str, str]]:
+    """Load formName -> label AND formName -> question number from the JSON spec."""
+    global _FORM_LABEL_MAP, _FORM_NUMBER_MAP, _ADDRESS_SUBFIELD_NAMES, _REQUIRED_FORM_NAMES
     if _FORM_LABEL_MAP:
-        return _FORM_LABEL_MAP
+        return _FORM_LABEL_MAP, _FORM_NUMBER_MAP
     try:
         form_path = Path(__file__).resolve().parent.parent / "form_supplier_general_info.json"
-        if form_path.exists():
-            data = json.loads(form_path.read_text(encoding="utf-8"))
-            for section in data.get("sections", []):
-                for field in section.get("fields", []):
-                    form_name = field.get("formName")
-                    name = field.get("name")
-                    if form_name and name:
-                        _FORM_LABEL_MAP[form_name] = str(name).strip()
+        if not form_path.exists():
+            return _FORM_LABEL_MAP, _FORM_NUMBER_MAP
+        data = json.loads(form_path.read_text(encoding="utf-8"))
+
+        def _extract(fields: list, parent_has_subfields: bool = False) -> None:
+            for field in fields:
+                fn = field.get("formName")
+                name = field.get("name")
+                number = field.get("number")
+                answer_type = field.get("answerType", "")
+                if fn and name:
+                    _FORM_LABEL_MAP[fn] = str(name).strip()
+                if fn and number:
+                    _FORM_NUMBER_MAP[fn] = str(number).strip()
+                if fn and field.get("required") and answer_type != "File":
+                    _REQUIRED_FORM_NAMES.add(fn)
+                if parent_has_subfields and fn:
+                    _ADDRESS_SUBFIELD_NAMES.add(fn)
+                for sub in field.get("subfields", []):
+                    sfn = sub.get("formName")
+                    sname = sub.get("name")
+                    if sfn and sname:
+                        _FORM_LABEL_MAP[sfn] = str(sname).strip()
+                        _ADDRESS_SUBFIELD_NAMES.add(sfn)
+                    if sfn and sub.get("required"):
+                        _REQUIRED_FORM_NAMES.add(sfn)
+
+        for section in data.get("sections", []):
+            _extract(section.get("fields", []))
+            for subsection in section.get("subsections", []):
+                _extract(subsection.get("fields", []))
     except Exception as e:
-        logger.debug("Could not load form label map: %s", e)
-    return _FORM_LABEL_MAP
+        logger.debug("Could not load form maps: %s", e)
+    return _FORM_LABEL_MAP, _FORM_NUMBER_MAP
 
 
-def _fill_by_label_exact_then_tr(page: Any, frame: Any, label: str, value: str) -> bool:
-    """Find element with exact label text, walk up to nearest ancestor tr that has an input, fill it. Tries frame then page. Returns True if filled."""
-    js = """
-    ([label, value]) => {
-        const candidates = Array.from(document.querySelectorAll('*')).filter(e => {
-            const t = (e.textContent || '').trim().replace(/\\s+/g, ' ');
-            return t === label || t.endsWith(' ' + label) || (t.includes(label) && t.length < 200);
-        });
-        const el = candidates.length ? candidates.reduce((a, b) =>
-            (a.textContent || '').length < (b.textContent || '').length ? a : b
-        ) : null;
-        if (!el) return false;
-        let tr = el.closest('tr');
-        while (tr) {
-            const inp = tr.querySelector('input:not([type=hidden]), textarea, select');
-            if (inp) {
-                inp.focus();
-                inp.value = value;
-                inp.dispatchEvent(new Event('input', { bubbles: true }));
-                inp.dispatchEvent(new Event('change', { bubbles: true }));
-                return true;
-            }
-            tr = tr.parentElement && tr.parentElement.closest('tr');
-        }
-        return false;
-    }
-    """
-    args = [label, value]
+def _dump_page_html(page: Any, label: str) -> str | None:
+    """Save current page HTML (main + SMFrame if present) to logs/ and return the path."""
     try:
-        fr = page.frame(name="SMFrame")
-        if fr and fr.evaluate(js, args):
-            return True
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time())
+        main_html = page.content()
+        frame_html = ""
+        try:
+            sm_frame = page.frame(name="SMFrame")
+            if sm_frame:
+                frame_html = sm_frame.content()
+        except Exception:
+            pass
+
+        combined = f"<!-- PAGE URL: {page.url} -->\n<!-- LABEL: {label} -->\n"
+        combined += "<!-- === MAIN PAGE HTML === -->\n" + main_html
+        if frame_html:
+            combined += "\n\n<!-- === SMFRAME HTML === -->\n" + frame_html
+
+        dump_path = LOGS_DIR / f"ariba_{label}_{ts}.html"
+        dump_path.write_text(combined, encoding="utf-8")
+        logger.info("HTML dump saved: %s (url: %s)", dump_path.name, page.url)
+        return str(dump_path)
+    except Exception as e:
+        logger.warning("Could not dump HTML (%s): %s", label, e)
+        return None
+
+
+def _fill_text_by_number(page: Any, qnum: str, label: str, value: str) -> bool:
+    """Use Playwright locators to fill a text input in the stItemRow matching qnum."""
+    import re as _re
+    qnum_escaped = _re.escape(qnum)
+    pattern = _re.compile(rf"(^|\s){qnum_escaped}(\s|$)")
+
+    targets = [page]
+    try:
+        sm = page.frame(name="SMFrame")
+        if sm:
+            targets.insert(0, sm)
     except Exception:
         pass
+
+    for ctx in targets:
+        try:
+            rows = ctx.locator("tr.stItemRow")
+            count = rows.count()
+            for i in range(count):
+                row = rows.nth(i)
+                cell_text = row.text_content(timeout=3000) or ""
+                cell_text = " ".join(cell_text.split())
+                if not pattern.search(cell_text):
+                    continue
+                inp = row.locator("td.columnBreak input.w-txt, td.columnBreak textarea").first
+                if inp.count() == 0:
+                    inp = row.locator("input.w-txt:not([type=hidden]), textarea").first
+                if inp.count() == 0:
+                    continue
+                inp.scroll_into_view_if_needed()
+                inp.click(timeout=3000)
+                inp.fill(value, timeout=3000)
+                return True
+        except Exception as exc:
+            logger.debug("_fill_text_by_number ctx failed: %s", exc)
+            continue
+    return False
+
+
+def _select_dropdown_by_number(page: Any, qnum: str, value: str) -> str | bool:
+    """Use Playwright locators to open an Ariba w-dropdown and select an option by text."""
+    import re as _re
+    qnum_escaped = _re.escape(qnum)
+    pattern = _re.compile(rf"(^|\s){qnum_escaped}(\s|$)")
+    value_lower = value.lower().strip()
+
+    targets = [page]
     try:
-        if page.evaluate(js, args):
-            return True
+        sm = page.frame(name="SMFrame")
+        if sm:
+            targets.insert(0, sm)
     except Exception:
         pass
+
+    for ctx in targets:
+        try:
+            rows = ctx.locator("tr.stItemRow")
+            count = rows.count()
+            for i in range(count):
+                row = rows.nth(i)
+                cell_text = row.text_content(timeout=3000) or ""
+                cell_text = " ".join(cell_text.split())
+                if not pattern.search(cell_text):
+                    continue
+                dd = row.locator('div.w-dropdown[role="combobox"]').first
+                if dd.count() == 0:
+                    continue
+                dd.scroll_into_view_if_needed()
+                dd.click(timeout=3000)
+                page.wait_for_timeout(300)
+                items = row.locator('div.w-dropdown-item[role="option"]')
+                item_count = items.count()
+                for j in range(item_count):
+                    item = items.nth(j)
+                    item_text = (item.text_content(timeout=2000) or "").strip()
+                    if item_text.lower() == value_lower or value_lower in item_text.lower():
+                        item.click(timeout=3000)
+                        page.wait_for_timeout(500)
+                        return f"selected: {item_text}"
+                dd.click(timeout=2000)
+                return f"no matching option for: {value}"
+        except Exception as exc:
+            logger.debug("_select_dropdown_by_number ctx failed: %s", exc)
+            continue
+    return False
+
+
+def _fill_labeled_subfield(page: Any, label_text: str, value: str) -> bool:
+    """Use Playwright locators to fill input associated with a <label> element."""
+    clean = label_text.rstrip(":").strip()
+
+    targets = [page]
+    try:
+        sm = page.frame(name="SMFrame")
+        if sm:
+            targets.insert(0, sm)
+    except Exception:
+        pass
+
+    for ctx in targets:
+        try:
+            inp = ctx.get_by_label(clean, exact=False).first
+            if inp.count() > 0:
+                inp.scroll_into_view_if_needed()
+                inp.click(timeout=3000)
+                inp.fill(value, timeout=3000)
+                return True
+        except Exception:
+            pass
+        try:
+            labels = ctx.locator("label")
+            for i in range(labels.count()):
+                lbl = labels.nth(i)
+                lt = (lbl.text_content(timeout=2000) or "").replace("\u00a0", " ").replace(":", "").strip()
+                if lt.lower() != clean.lower():
+                    continue
+                for_id = lbl.get_attribute("for")
+                if for_id:
+                    inp = ctx.locator(f"#{for_id}")
+                    if inp.count() > 0:
+                        inp.scroll_into_view_if_needed()
+                        inp.click(timeout=3000)
+                        inp.fill(value, timeout=3000)
+                        return True
+        except Exception:
+            continue
+    return False
+
+def _select_labeled_dropdown(page: Any, label_text: str, value: str) -> str | bool:
+    """Use Playwright locators to select a dropdown option near a <label> element."""
+    clean = label_text.rstrip(":").strip().lower()
+    value_lower = value.lower().strip()
+
+    targets = [page]
+    try:
+        sm = page.frame(name="SMFrame")
+        if sm:
+            targets.insert(0, sm)
+    except Exception:
+        pass
+
+    for ctx in targets:
+        try:
+            labels = ctx.locator("label")
+            for i in range(labels.count()):
+                lbl = labels.nth(i)
+                lt = (lbl.text_content(timeout=2000) or "").replace("\u00a0", " ").replace(":", "").strip()
+                if lt.lower() != clean:
+                    continue
+                tr = lbl.locator("xpath=ancestor::tr[1]")
+                if tr.count() == 0:
+                    continue
+                dd = tr.locator('div.w-dropdown[role="combobox"]').first
+                if dd.count() == 0:
+                    continue
+                dd.scroll_into_view_if_needed()
+                dd.click(timeout=3000)
+                page.wait_for_timeout(300)
+                items = tr.locator('div.w-dropdown-item[role="option"]')
+                item_count = items.count()
+                for j in range(item_count):
+                    item = items.nth(j)
+                    item_text = (item.text_content(timeout=2000) or "").strip()
+                    if item_text.lower() == value_lower or value_lower in item_text.lower():
+                        item.click(timeout=3000)
+                        page.wait_for_timeout(500)
+                        return f"selected: {item_text}"
+                dd.click(timeout=2000)
+                return f"no matching option for: {value}"
+        except Exception as exc:
+            logger.debug("_select_labeled_dropdown ctx failed: %s", exc)
+            continue
     return False
 
 
 def create_browserbase_session() -> dict[str, Any]:
-    """
-    Create a Browserbase session only (no Playwright, no form fill). Returns session_id, connect_url, live_url.
-    Used so the main process can publish the session to the room before spawning the form-fill subprocess.
-    """
+    """Create a Browserbase session only (no Playwright). Returns session_id, connect_url, live_url."""
     try:
         from browserbase import Browserbase
     except ImportError:
@@ -162,17 +347,10 @@ def run_ariba_form_fill(
     existing_connect_url: str | None = None,
 ) -> dict[str, Any]:
     """
-    Create a Browserbase session (region ap-southeast-1), connect via Playwright CDP,
-    navigate to Ariba login URL, log in with ARIBA_WEB_EMAIL / ARIBA_WEB_PASSWORD,
-    and optionally fill form fields from form_answers_json.
+    Create a Browserbase session, connect via Playwright CDP,
+    navigate to Ariba login URL, log in, then perform post-login steps.
 
-    Args:
-        form_answers_json: Optional JSON string - list of {"externalSystemCorrelationId": str, "answer": str}.
-        navigation_timeout_ms: Timeout for page loads (default 60s).
-        on_session_ready: Optional callback(session_id, live_url) invoked as soon as the session
-            and live view URL are ready (before browser connect/form fill). Use to publish to room immediately.
-        existing_session_id: When provided with existing_connect_url, connect to this session instead of creating one.
-        existing_connect_url: CDP connect URL for the existing session (from create_browserbase_session).
+    The last page HTML is saved to logs/ for inspection.
 
     Returns:
         Dict with keys: success (bool), session_id (str | None), live_url (str | None),
@@ -188,7 +366,7 @@ def run_ariba_form_fill(
             "session_id": None,
             "live_url": None,
             "message": f"{missing} not installed in this environment",
-            "error": f"Install with: pip install playwright browserbase (then run the worker with the same venv). Original: {e}",
+            "error": f"Install with: pip install playwright browserbase. Original: {e}",
         }
 
     api_key = os.environ.get("BROWSERBASE_API_KEY", "").strip()
@@ -221,6 +399,7 @@ def run_ariba_form_fill(
     browser = None
 
     try:
+        # ── Session setup ──
         if existing_session_id and existing_connect_url:
             session_id = existing_session_id
             connect_url = existing_connect_url
@@ -241,8 +420,6 @@ def run_ariba_form_fill(
                     "message": "Session created but no connect URL",
                     "error": "Session object missing connect_url",
                 }
-
-            # Debugger URL for live view (from Browserbase API)
             try:
                 links = bb.sessions.debug(session_id)
                 live_url = links.debugger_fullscreen_url or links.debugger_url
@@ -258,6 +435,7 @@ def run_ariba_form_fill(
                 except Exception as e:
                     logger.warning("on_session_ready callback failed: %s", e)
 
+        # ── Connect Playwright ──
         playwright = sync_playwright().start()
         browser = playwright.chromium.connect_over_cdp(connect_url)
         context = browser.contexts[0] if browser.contexts else None
@@ -276,431 +454,231 @@ def run_ariba_form_fill(
         page.set_default_timeout(navigation_timeout_ms)
         page.set_default_navigation_timeout(navigation_timeout_ms)
 
-        # Navigate to Ariba login
+        # ── Navigate to Ariba login ──
         page.goto(ariba_url, wait_until="domcontentloaded", timeout=navigation_timeout_ms)
 
-        # Login if credentials are set — target visible "User Name" and "Password" fields only (exclude hidden)
+        # ── Login ──
         if ariba_email and ariba_password:
             try:
-                # Prefer label/placeholder so we hit the visible editable fields, not hidden inputs
-                user_input = (
-                    page.get_by_placeholder("User Name")
-                    .or_(page.get_by_placeholder("Username"))
-                    .or_(page.get_by_label("User Name"))
-                    .or_(page.get_by_label("Username"))
-                    .first
-                )
+                # Ariba uses <input name="UserName"> (no type, no placeholder, no label element)
+                user_input = page.locator('input[name="UserName"]').first
+                if user_input.count() == 0:
+                    user_input = (
+                        page.get_by_placeholder("User Name")
+                        .or_(page.get_by_placeholder("Username"))
+                        .first
+                    )
                 if user_input.count() > 0:
                     user_input.fill(ariba_email)
+                    logger.info("Filled username")
                 else:
-                    # Fallback: visible text input, exclude hidden (hidden_username was matching before)
-                    visible_user = page.locator(
-                        'input:not([type="hidden"])[type="text"], input:not([type="hidden"])[type="email"], '
-                        'input:not([type="hidden"])[name="j_username"], input:not([type="hidden"])[name="email"]'
-                    ).first
-                    if visible_user.count() > 0:
-                        visible_user.fill(ariba_email)
-                password_input = (
-                    page.get_by_placeholder("Password")
-                    .or_(page.get_by_label("Password"))
-                    .first
-                )
-                if password_input.count() > 0:
-                    password_input.fill(ariba_password)
+                    logger.warning("Username field not found")
+
+                # Ariba has a hidden decoy <input type="password" class="displayNone">
+                # before the real one; target by id="Password" or name="Password"
+                pwd_input = page.locator('input#Password, input[name="Password"]:not(.displayNone)').first
+                if pwd_input.count() == 0:
+                    pwd_input = page.locator('input[type="password"]:visible').first
+                if pwd_input.count() > 0:
+                    pwd_input.fill(ariba_password)
+                    logger.info("Filled password")
                 else:
-                    pwd_fallback = page.locator('input[type="password"]').first
-                    if pwd_fallback.count() > 0:
-                        pwd_fallback.fill(ariba_password)
+                    logger.warning("Password field not found")
+
+                # Submit is <input type="submit" value="Login"> not a <button>
                 submit = page.locator(
-                    'button[type="submit"], input[type="submit"], [type="submit"], '
-                    'button:has-text("Log in"), button:has-text("Sign in"), '
-                    'a:has-text("Log in"), a:has-text("Sign in")'
+                    'input[type="submit"][value="Login"], input[type="submit"], '
+                    'button[type="submit"], [type="submit"]'
                 ).first
                 if submit.count() > 0:
                     submit.click()
-                    # Wait for post-login navigation and full load (redirect or SPA)
                     page.wait_for_load_state("domcontentloaded", timeout=15000)
                     page.wait_for_load_state("load", timeout=15000)
                     try:
                         page.wait_for_load_state("networkidle", timeout=20000)
                     except Exception:
                         pass
-            except Exception as e:
-                logger.warning("Login step failed (selectors may not match): %s", e)
-
-        # Frame reference for form/dashboard content (used for supplier steps and form fill)
-        frame = page.frame_locator("#SMFrame")
-
-        # After login: click the link/element for "Supplier General Information" (e.g. "ABC Industries")
-        _supplier_name: str | None = None
-        if form_answers_json:
-            try:
-                answers = json.loads(form_answers_json)
-                if isinstance(answers, list):
-                    for item in answers:
-                        corr = (item.get("externalSystemCorrelationId") or item.get("correlationId") or "").strip()
-                        if corr in ("supplierName1", "Supplier Name 1"):
-                            _supplier_name = (item.get("answer") or item.get("value") or "").strip()
-                            break
-            except json.JSONDecodeError:
-                pass
-        if not _supplier_name:
-            try:
-                form_path = Path(__file__).resolve().parent.parent / "form_supplier_general_info.json"
-                if form_path.exists():
-                    form_data = json.loads(form_path.read_text(encoding="utf-8"))
-                    for section in form_data.get("sections", []):
-                        for field in section.get("fields", []):
-                            if field.get("formName") == "supplierName1" and field.get("user_answer"):
-                                _supplier_name = str(field["user_answer"]).strip()
-                                break
-                        if _supplier_name:
-                            break
-            except Exception as e:
-                logger.debug("Could not read supplier name from form file: %s", e)
-        if _supplier_name:
-            try:
-                # Supplier dashboard lives inside iframe SMFrame (see saved HTML: id="SMFrame", src=.../supplier-dashboard)
-                logger.info("Waiting for SMFrame iframe and supplier table...")
-                page.wait_for_selector("iframe#SMFrame", state="attached", timeout=15000)
-
-                escaped = _supplier_name.replace('"', '\\"')
-                row_selector = f'md-row:has(div.link-text[title="{escaped}"])'
-                try:
-                    frame.locator(row_selector).first.wait_for(state="visible", timeout=20000)
-                    logger.info("Supplier table row found in iframe for: %s", _supplier_name)
-                except Exception as e:
-                    logger.warning("Supplier table row not found in iframe after 20s: %s", e)
-
-                logger.info("Opening Supplier General Information for: %s", _supplier_name)
-                clicked = False
-
-                # Table is inside iframe: md-row, View is button[aria-label="View"] in same row
-                try:
-                    row = frame.locator(row_selector).first
-                    row.locator('button[aria-label="View"]').first.click(timeout=5000)
-                    page.wait_for_load_state("load", timeout=15000)
-                    logger.info("Clicked View for supplier: %s", _supplier_name)
-                    clicked = True
-                except Exception as e:
-                    logger.debug("View button click failed: %s", e)
-
-                if not clicked:
-                    try:
-                        loc = frame.locator(f'div.link-text[title="{escaped}"]').first
-                        loc.scroll_into_view_if_needed(timeout=3000)
-                        loc.click(timeout=5000, force=True)
-                        page.wait_for_load_state("load", timeout=15000)
-                        logger.info("Clicked supplier name for: %s", _supplier_name)
-                        clicked = True
-                    except Exception as e:
-                        logger.debug("Supplier name click failed: %s", e)
-
-                if not clicked:
-                    logger.warning("Could not open supplier %r (tried View button and supplier name in iframe)", _supplier_name)
-
-                # After opening supplier: click Advanced View icon/button (same frame)
-                if clicked:
-                    try:
-                        adv_btn = frame.locator('button#advanced-view, button[aria-label="Advanced View"]').first
-                        adv_btn.wait_for(state="visible", timeout=20000)
-                        adv_btn.click(timeout=15000)
-                        logger.info("Clicked Advanced View")
-                    except Exception as e:
-                        logger.warning("Could not click Advanced View: %s", e)
-
-                # Next: click "Supplier request form" then "Prepare Response" in dropdown.
-                # Link and dropdown can be in frame or main page (page3.html); try frame first then page.
-                # Link: <a class="hoverArrow hoverLink">Supplier request form</a>
-                # Menu item: <a role="menuitem"><b>Prepare Response</b></a>
-                if clicked:
-                    try:
-                        supplier_form_link = None
-                        for locator in [
-                            frame.locator('a.hoverLink:has-text("Supplier request form")').first,
-                            frame.locator('a:has-text("Supplier request form")').first,
-                            page.locator('a.hoverLink:has-text("Supplier request form")').first,
-                            page.locator('a:has-text("Supplier request form")').first,
-                        ]:
-                            try:
-                                locator.wait_for(state="visible", timeout=5000)
-                                supplier_form_link = locator
-                                break
-                            except Exception:
-                                continue
-                        if supplier_form_link:
-                            supplier_form_link.scroll_into_view_if_needed(timeout=5000)
-                            supplier_form_link.click(timeout=5000)
-                            logger.info("Clicked Supplier request form")
-                            # Dropdown opens (options lazy-load); click "Prepare Response" (capital R in page3)
-                            prepare_btn = None
-                            for loc in [
-                                page.locator('[role="menuitem"]:has-text("Prepare Response")').first,
-                                page.locator('[role="menuitem"]:has-text("Prepare response")').first,
-                                frame.locator('[role="menuitem"]:has-text("Prepare Response")').first,
-                                frame.locator('[role="menuitem"]:has-text("Prepare response")').first,
-                            ]:
-                                try:
-                                    loc.wait_for(state="visible", timeout=12000)
-                                    prepare_btn = loc
-                                    break
-                                except Exception:
-                                    continue
-                            if prepare_btn:
-                                prepare_btn.click(timeout=5000)
-                                logger.info("Clicked Prepare Response")
-                                # Click "Revise Response" button: <button class="w-btn w-btn-primary" title="Revise Response">
-                                revise_btn = None
-                                for loc in [
-                                    page.locator('button[title="Revise Response"]').first,
-                                    page.locator('button:has-text("Revise Response")').first,
-                                    frame.locator('button[title="Revise Response"]').first,
-                                    frame.locator('button:has-text("Revise Response")').first,
-                                ]:
-                                    try:
-                                        loc.wait_for(state="visible", timeout=10000)
-                                        revise_btn = loc
-                                        break
-                                    except Exception:
-                                        continue
-                                if revise_btn:
-                                    revise_btn.click(timeout=5000)
-                                    logger.info("Clicked Revise Response")
-                                    # Click OK button in dialog: <button class="w-btn" title="OK">
-                                    ok_btn = None
-                                    for loc in [
-                                        page.locator('button[title="OK"]').first,
-                                        page.locator('button:has-text("OK")').first,
-                                        frame.locator('button[title="OK"]').first,
-                                        frame.locator('button:has-text("OK")').first,
-                                    ]:
-                                        try:
-                                            loc.wait_for(state="visible", timeout=10000)
-                                            ok_btn = loc
-                                            break
-                                        except Exception:
-                                            continue
-                                    if ok_btn:
-                                        ok_btn.click(timeout=5000)
-                                        page.wait_for_load_state("load", timeout=15000)
-                                        logger.info("Clicked OK")
-                                    else:
-                                        logger.warning("OK button not found")
-                                else:
-                                    logger.warning("Revise Response button not found")
-                            else:
-                                logger.warning("Prepare Response menuitem not found")
-                        else:
-                            logger.warning("Supplier request form link not found in frame or main page")
-                    except Exception as e:
-                        logger.warning("Could not click Supplier request form / Prepare Response: %s", e)
-            except Exception as e:
-                logger.warning("Could not open Supplier General Information (%s): %s", _supplier_name, e)
-
-        # Fill form fields from JSON passed by main.py (collected_form_answers).
-        # After initial steps (OK) we are on the form page; fill then submit.
-        form_was_filled = False
-        if form_answers_json:
-            try:
-                answers = json.loads(form_answers_json)
-                if isinstance(answers, list):
-                    label_map = _load_form_label_map()
-                    filled_count = 0
-                    for item in answers:
-                        corr_id = item.get("externalSystemCorrelationId") or item.get(
-                            "correlationId", ""
-                        )
-                        answer = item.get("answer") or item.get("value", "")
-                        if not corr_id:
-                            continue
-                        value = str(answer).strip()
-                        if not value:
-                            continue
-                        filled = False
-                        label = label_map.get(corr_id)
-                        # Try page and frame; try id/name/data attr, then label, then row-with-label
-                        for ctx in (page, frame):
-                            if filled:
-                                break
-                            selectors = [
-                                f'input[id="{corr_id}"], textarea[id="{corr_id}"], select[id="{corr_id}"]',
-                                f'input[name="{corr_id}"], textarea[name="{corr_id}"], select[name="{corr_id}"]',
-                                f'[data-correlation-id="{corr_id}"]',
-                                f'input[id*="{corr_id}"], textarea[id*="{corr_id}"]',
-                            ]
-                            for sel in selectors:
-                                try:
-                                    el = ctx.locator(sel).first
-                                    if el.count() > 0:
-                                        el.fill(value)
-                                        filled = True
-                                        filled_count += 1
-                                        logger.info("Filled %s by selector", corr_id)
-                                        break
-                                except Exception:
-                                    pass
-                            if filled:
-                                break
-                            if label:
-                                try:
-                                    el = ctx.get_by_label(label).first
-                                    if el.count() > 0:
-                                        el.fill(value)
-                                        filled = True
-                                        filled_count += 1
-                                        logger.info("Filled %s by label %s", corr_id, label)
-                                        break
-                                except Exception:
-                                    pass
-                            if filled:
-                                break
-                            # Label-exact + walk up: find element with exact label text, then nearest ancestor tr that has an input.
-                            # Ariba uses nested tables so tr.filter(has_text) can match a huge row; we need the input for this question only.
-                            if label:
-                                try:
-                                    if _fill_by_label_exact_then_tr(page, frame, label, value):
-                                        filled = True
-                                        filled_count += 1
-                                        logger.info("Filled %s by label-exact (label %s)", corr_id, label)
-                                        break
-                                except Exception:
-                                    pass
-                        if not filled:
-                            logger.warning("No element found for correlationId %s (label: %s)", corr_id, label_map.get(corr_id, ""))
-                    if answers:
-                        logger.info("Form fill: %d of %d field(s) filled from JSON", filled_count, len(answers))
-                        form_was_filled = filled_count > 0
-            except json.JSONDecodeError as e:
-                logger.warning("Invalid form_answers_json: %s", e)
-
-        # Always click "Submit Entire Response" when we have form answers (fields may have been filled by JS without tracking)
-        if form_answers_json:
-            submit_clicked = False
-            # 1) Direct locator on page with force click
-            try:
-                btn = page.locator('button[title="Submit Entire Response"]').first
-                btn.scroll_into_view_if_needed(timeout=5000)
-                btn.click(timeout=5000, force=True)
-                submit_clicked = True
-                logger.info("Clicked Submit Entire Response (page locator)")
-            except Exception as e:
-                logger.warning("Submit page locator failed: %s", e)
-            # 2) get_by_role
-            if not submit_clicked:
-                try:
-                    btn = page.get_by_role("button", name="Submit Entire Response").first
-                    btn.scroll_into_view_if_needed(timeout=5000)
-                    btn.click(timeout=5000, force=True)
-                    submit_clicked = True
-                    logger.info("Clicked Submit Entire Response (get_by_role)")
-                except Exception as e:
-                    logger.warning("Submit get_by_role failed: %s", e)
-            # 3) JS click on main page
-            if not submit_clicked:
-                try:
-                    result = page.evaluate(
-                        """() => {
-                            const btn = document.querySelector('button[title="Submit Entire Response"]');
-                            if (btn) { btn.scrollIntoView({block:'center'}); btn.click(); return 'clicked'; }
-                            const all = Array.from(document.querySelectorAll('button'));
-                            const found = all.find(b => b.textContent.replace(/\\s+/g,' ').trim() === 'Submit Entire Response');
-                            if (found) { found.scrollIntoView({block:'center'}); found.click(); return 'clicked-text'; }
-                            return 'not-found: ' + all.length + ' buttons, titles: ' + all.slice(0,10).map(b=>b.title||b.textContent.trim().slice(0,30)).join(', ');
-                        }"""
-                    )
-                    logger.info("Submit JS result: %s", result)
-                    if result and result.startswith("clicked"):
-                        submit_clicked = True
-                except Exception as e:
-                    logger.warning("Submit page JS failed: %s", e)
-            # 4) Try all frames
-            if not submit_clicked:
-                for f in page.frames:
-                    if f == page.main_frame:
-                        continue
-                    try:
-                        result = f.evaluate(
-                            """() => {
-                                const btn = document.querySelector('button[title="Submit Entire Response"]');
-                                if (btn) { btn.scrollIntoView({block:'center'}); btn.click(); return 'clicked'; }
-                                return 'not-found';
-                            }"""
-                        )
-                        if result and result.startswith("clicked"):
-                            submit_clicked = True
-                            logger.info("Clicked Submit Entire Response (frame %s)", f.url[:60])
-                            break
-                    except Exception:
-                        continue
-            if not submit_clicked:
-                logger.warning("Submit Entire Response button not found or not clickable")
-            if submit_clicked:
-                # Click OK in the "Submit this response?" / "Click OK to submit" dialog.
-                # Dialog structure: <div role="dialog">...<div class="w-dlg-buttons">...<button title="OK">
-                # There are multiple hidden OK dialogs; we need the visible one with "Submit this response?" title.
-                ok_clicked = False
-                # 1) Wait for dialog with "Submit this response?" to become visible, then Playwright-click its OK
-                try:
-                    dialog = page.locator('[role="dialog"]:has-text("Submit this response")').first
-                    dialog.wait_for(state="visible", timeout=10000)
-                    ok_btn = dialog.locator('button[title="OK"]').first
-                    ok_btn.wait_for(state="visible", timeout=5000)
-                    ok_btn.click(timeout=5000)
-                    ok_clicked = True
-                    logger.info("Clicked OK after Submit (role=dialog)")
-                except Exception as e:
-                    logger.debug("OK role=dialog: %s", e)
-                # 2) Try w-dlg-dialog with "Click OK to submit"
-                if not ok_clicked:
-                    try:
-                        dialog = page.locator('.w-dlg-dialog:has-text("Click OK to submit")').first
-                        dialog.wait_for(state="visible", timeout=5000)
-                        ok_btn = dialog.locator('button[title="OK"]').first
-                        ok_btn.wait_for(state="visible", timeout=5000)
-                        ok_btn.click(timeout=5000)
-                        ok_clicked = True
-                        logger.info("Clicked OK after Submit (w-dlg-dialog)")
-                    except Exception as e:
-                        logger.debug("OK w-dlg-dialog: %s", e)
-                # 3) Click whichever OK button is currently visible (Playwright checks visibility)
-                if not ok_clicked:
-                    try:
-                        all_ok = page.locator('button[title="OK"]')
-                        n = all_ok.count()
-                        for i in range(n):
-                            btn = all_ok.nth(i)
-                            if btn.is_visible():
-                                btn.click(timeout=5000)
-                                ok_clicked = True
-                                logger.info("Clicked OK after Submit (visible button #%d)", i)
-                                break
-                    except Exception as e:
-                        logger.debug("OK visible loop: %s", e)
-                if ok_clicked:
-                    # Wait for page to load/redirect after submission
-                    try:
-                        page.wait_for_load_state("domcontentloaded", timeout=20000)
-                        page.wait_for_load_state("load", timeout=20000)
-                        try:
-                            page.wait_for_load_state("networkidle", timeout=20000)
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-                    page.wait_for_timeout(3000)
-                    logger.info("Post-submit page loaded. URL: %s", page.url)
+                    logger.info("Login submitted. URL: %s", page.url)
                 else:
-                    logger.warning("OK button after Submit not found or not clickable")
+                    logger.warning("Submit button not found")
+            except Exception as e:
+                logger.warning("Login step failed: %s", e)
 
+        # ── Post-login: dismiss "additional info" banner if present ──
+        try:
+            dont_show_btn = page.locator('button:has-text("Don\'t show this to me again")').first
+            dont_show_btn.wait_for(state="visible", timeout=8000)
+            dont_show_btn.click(timeout=5000)
+            page.wait_for_load_state("load", timeout=15000)
+            logger.info("Dismissed 'Don't show this to me again' banner")
+        except Exception:
+            logger.info("No 'additional info' banner found, continuing")
+
+        # ── Dump current page for inspection ──
+        _dump_page_html(page, "after_login")
+
+        # ── Fill form fields ──
+        filled_count = 0
+        failed_fields: list[str] = []
+
+        if form_answers_json:
+            try:
+                answers = json.loads(form_answers_json) if isinstance(form_answers_json, str) else form_answers_json
+            except json.JSONDecodeError:
+                answers = []
+                logger.warning("Could not parse form_answers_json")
+
+            if isinstance(answers, list) and answers:
+                label_map, number_map = _load_form_maps()
+                logger.info(
+                    "Filling %d form answers (label_map=%d, number_map=%d)",
+                    len(answers), len(label_map), len(number_map),
+                )
+
+                for entry in answers:
+                    form_name = entry.get("externalSystemCorrelationId") or entry.get("formName", "")
+                    value = str(entry.get("answer", "")).strip()
+                    if not form_name or not value:
+                        continue
+
+                    q_number = number_map.get(form_name)
+                    label = label_map.get(form_name, "")
+                    is_address_sub = form_name in _ADDRESS_SUBFIELD_NAMES
+
+                    logger.info(
+                        "Filling field %s (number=%s, label=%s, address=%s) = %s",
+                        form_name, q_number, label, is_address_sub, value,
+                    )
+
+                    success = False
+
+                    if is_address_sub and label:
+                        if _fill_labeled_subfield(page, label, value):
+                            success = True
+                            logger.info("  Filled address subfield '%s' via label", label)
+                        else:
+                            result = _select_labeled_dropdown(page, label, value)
+                            if result and isinstance(result, str) and result.startswith("selected:"):
+                                success = True
+                                logger.info("  Selected address dropdown '%s': %s", label, result)
+                            else:
+                                logger.warning("  Address subfield '%s' not filled: %s", label, result)
+                    elif q_number:
+                        if _fill_text_by_number(page, q_number, label, value):
+                            success = True
+                            logger.info("  Filled text field %s", q_number)
+                        else:
+                            result = _select_dropdown_by_number(page, q_number, value)
+                            if result and isinstance(result, str) and result.startswith("selected:"):
+                                success = True
+                                logger.info("  Selected dropdown %s: %s", q_number, result)
+                            else:
+                                logger.warning("  Field %s (%s) not filled: %s", q_number, form_name, result)
+                    else:
+                        if label:
+                            if _fill_labeled_subfield(page, label, value):
+                                success = True
+                                logger.info("  Filled field '%s' via label fallback", label)
+                            else:
+                                result = _select_labeled_dropdown(page, label, value)
+                                if result and isinstance(result, str) and result.startswith("selected:"):
+                                    success = True
+                                    logger.info("  Selected dropdown '%s' via label fallback: %s", label, result)
+
+                    if success:
+                        filled_count += 1
+                    else:
+                        failed_fields.append(form_name)
+                        logger.warning("  FAILED to fill: %s (number=%s, label=%s)", form_name, q_number, label)
+
+                logger.info("Form fill complete: %d/%d fields filled", filled_count, len(answers))
+                if failed_fields:
+                    logger.warning("Failed fields: %s", failed_fields)
+
+        # ── Determine whether all required fields are covered ──
+        submitted = False
+        saved_draft = False
+        provided_form_names: set[str] = set()
+        if form_answers_json:
+            try:
+                answers_check = json.loads(form_answers_json) if isinstance(form_answers_json, str) else form_answers_json
+            except Exception:
+                answers_check = []
+            if isinstance(answers_check, list):
+                for entry in answers_check:
+                    fn = entry.get("externalSystemCorrelationId") or entry.get("formName", "")
+                    val = str(entry.get("answer", "")).strip()
+                    if fn and val:
+                        provided_form_names.add(fn)
+
+        missing_required = _REQUIRED_FORM_NAMES - provided_form_names
+        all_required_filled = len(missing_required) == 0 and filled_count > 0
+
+        if all_required_filled:
+            logger.info("All %d required fields provided — submitting entire response", len(_REQUIRED_FORM_NAMES))
+        else:
+            if missing_required:
+                logger.info(
+                    "Missing %d required fields — will save draft instead: %s",
+                    len(missing_required),
+                    sorted(missing_required),
+                )
+            elif filled_count == 0:
+                logger.info("No fields were filled — will save draft")
+
+        if filled_count > 0:
+            if all_required_filled:
+                # ── Submit Entire Response ──
+                try:
+                    submit_btn = page.locator('button[title="Submit Entire Response"]').first
+                    submit_btn.scroll_into_view_if_needed()
+                    submit_btn.click(timeout=10000)
+                    logger.info("Clicked 'Submit Entire Response'")
+
+                    try:
+                        ok_btn = page.locator(
+                            '[role="dialog"]:has-text("Submit this response") button:has-text("OK"), '
+                            '.w-dlg-buttons button:has-text("OK")'
+                        ).first
+                        ok_btn.wait_for(state="visible", timeout=10000)
+                        ok_btn.click(timeout=5000)
+                        logger.info("Clicked OK in submit confirmation dialog")
+                        page.wait_for_timeout(3000)
+                        submitted = True
+                    except Exception as e:
+                        logger.warning("Could not click OK in confirmation dialog: %s", e)
+                except Exception as e:
+                    logger.warning("Could not click Submit Entire Response: %s", e)
+            else:
+                # ── Save Draft ──
+                try:
+                    draft_btn = page.locator(
+                        'button[title="Save your response; it will not be submitted to the owner"], '
+                        'button:has-text("Save draft")'
+                    ).first
+                    draft_btn.scroll_into_view_if_needed()
+                    draft_btn.click(timeout=10000)
+                    logger.info("Clicked 'Save draft' (not all required fields filled)")
+                    page.wait_for_timeout(3000)
+                    saved_draft = True
+                except Exception as e:
+                    logger.warning("Could not click Save draft: %s", e)
+
+        _dump_page_html(page, "after_fill")
+
+        action = "Submitted" if submitted else ("Saved draft" if saved_draft else "No action")
         logger.info(
-            "Session done. View replay & steps: https://www.browserbase.com/sessions/%s",
+            "Session done. View replay: https://www.browserbase.com/sessions/%s",
             session_id,
         )
         return {
             "success": True,
             "session_id": session_id,
             "live_url": live_url,
-            "message": "Browser session started; Ariba login and form fill completed.",
+            "message": (
+                f"Filled {filled_count} fields. {action}. "
+                f"Failed: {failed_fields}. Missing required: {sorted(missing_required)}"
+            ),
             "error": None,
         }
     except Exception as e:
@@ -726,9 +704,7 @@ def run_ariba_form_fill(
 
 
 if __name__ == "__main__":
-    """CLI entrypoint: read stdin (JSON object or raw form_answers_json string), run form fill, print JSON result.
-    When parent passes {"form_answers_json": "...", "session_id": "...", "connect_url": "..."}, connects to
-    existing session instead of creating one (used after publishing session to room)."""
+    """CLI entrypoint: read stdin JSON, run form fill, print JSON result."""
     import sys
     logging.basicConfig(
         level=logging.INFO,

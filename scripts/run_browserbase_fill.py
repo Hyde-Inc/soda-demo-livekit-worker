@@ -37,7 +37,25 @@ logging.basicConfig(
 
 if __name__ == "__main__":
     raw = sys.stdin.read().strip() if not sys.stdin.isatty() else ""
-    form_answers_json = raw if raw else None
+    form_answers_json = None
+    existing_session_id = None
+    existing_connect_url = None
+    if raw:
+        try:
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                faj = payload.get("form_answers_json")
+                form_answers_json = json.dumps(faj) if isinstance(faj, list) else faj
+                existing_session_id = payload.get("session_id")
+                existing_connect_url = payload.get("connect_url")
+            else:
+                form_answers_json = raw
+        except json.JSONDecodeError:
+            form_answers_json = raw
     from browser_automation import ariba_form_fill
-    result = ariba_form_fill.run_ariba_form_fill(form_answers_json=form_answers_json)
+    result = ariba_form_fill.run_ariba_form_fill(
+        form_answers_json=form_answers_json,
+        existing_session_id=existing_session_id or None,
+        existing_connect_url=existing_connect_url or None,
+    )
     print(json.dumps(result), flush=True)

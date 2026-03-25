@@ -1,7 +1,14 @@
-[
-  {"externalSystemCorrelationId": "supplierName2", "answer": "ABC"},
-  {"externalSystemCorrelationId": "supplierBrandName", "answer": "Unspecified"},
-  {"externalSystemCorrelationId": "primaryContactFirstName", "answer": "Tom"},
-  {"externalSystemCorrelationId": "primaryContactLastName", "answer": "Cruise"},
-  {"externalSystemCorrelationId": "primaryContactMobile", "answer": "8433568933"}
-]
+{
+  "form_answers_json": [
+    {"externalSystemCorrelationId": "supplierName2", "answer": "ABC"},
+    {"externalSystemCorrelationId": "supplierBrandName", "answer": "BRAND NAME 1"},
+    {"externalSystemCorrelationId": "primaryContactFirstName", "answer": "Tom"},
+    {"externalSystemCorrelationId": "primaryContactLastName", "answer": "Cruise"},
+    {"externalSystemCorrelationId": "primaryContactMobile", "answer": "8433568933"},
+    {"externalSystemCorrelationId": "primaryContactEmail", "answer": "tom@example.com"},
+    {"externalSystemCorrelationId": "vendorCategory", "answer": "Chemical"},
+    {"externalSystemCorrelationId": "vendorClassification", "answer": "Manufacturer"},
+    {"externalSystemCorrelationId": "vendorCategory", "answer": "Chemical"},
+    {"externalSystemCorrelationId": "bankName", "answer": "HDFC Bank"}
+  ]
+}
