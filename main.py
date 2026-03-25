@@ -1640,6 +1640,6 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="tatachemicals-ariba-fill-agent",
+            agent_name="tatachemicals-voice-agent",
         )
     )
