@@ -53,6 +53,10 @@ _ariba_workspace_id: Optional[str] = None
 _ariba_qna_url_cached: Optional[str] = None
 _ariba_answers_url_cached: Optional[str] = None
 
+# Supabase: persist transcript/lifecycle/tool events to durable_agent_run_event
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+
 from livekit import rtc, api
 from livekit.agents import (
     AgentSession,
@@ -73,6 +77,7 @@ from livekit.plugins import (
 )
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from pathlib import Path
+from call_activity import CallActivityRecorder
 
 def load_products_from_json() -> list[dict[str, Any]]:
     """Load products from tata_chemicals_products.json"""
@@ -675,6 +680,7 @@ def _flush_ariba_and_create_browserbase_session_sync(
 async def _flush_publish_browserbase_then_subprocess(
     collected: list[dict[str, Any]],
     room: Any,
+    recorder: CallActivityRecorder | None = None,
 ) -> None:
     """
     On session close: flush to Ariba, create Browserbase session, publish session_id to room
@@ -687,7 +693,7 @@ async def _flush_publish_browserbase_then_subprocess(
     if session_result and session_result.get("success") and room:
         session_id = session_result.get("session_id")
         if session_id:
-            await _publish_browserbase_session_to_room(room, session_id)
+            await _publish_browserbase_session_to_room(room, session_id, recorder=recorder)
             logger.info(
                 "Published browserbase_session to room before subprocess (session_id=%s); starting form-fill subprocess",
                 session_id,
@@ -767,7 +773,11 @@ async def _publish_transcript_to_room(room: Any, payload: dict) -> None:
         logger.warning(f"Failed to publish transcript to room: {e}")
 
 
-async def _publish_browserbase_session_to_room(room: Any, session_id: str) -> None:
+async def _publish_browserbase_session_to_room(
+    room: Any,
+    session_id: str,
+    recorder: CallActivityRecorder | None = None,
+) -> None:
     """Publish browserbase session for viewing in the room (event + sessionId + timestamp)."""
     if room is None:
         return
@@ -785,8 +795,15 @@ async def _publish_browserbase_session_to_room(room: Any, session_id: str) -> No
             BROWSERBASE_SESSION_TOPIC,
             payload,
         )
-        data = json.dumps(payload).encode("utf-8")
-        await local.publish_data(data, topic=BROWSERBASE_SESSION_TOPIC)
+        if recorder:
+            await recorder.publish_data_message(
+                topic=BROWSERBASE_SESSION_TOPIC,
+                payload=payload,
+                lifecycle_event="browserbase_session_published",
+            )
+        else:
+            data = json.dumps(payload).encode("utf-8")
+            await local.publish_data(data, topic=BROWSERBASE_SESSION_TOPIC)
         logger.info(
             "Published browserbase_session to room: event=%s sessionId=%s timestamp=%s",
             payload["event"],
@@ -1096,6 +1113,11 @@ class OutboundCaller(Agent):
         self._form_answers_flushed: bool = False
         # Room reference for publishing transcript data messages (set in entrypoint)
         self.room: Any = None
+        self.recorder: CallActivityRecorder | None = None
+        # Supabase durable_agent_run_event: run_id/workflow_id set in entrypoint from metadata
+        self.run_id: str | None = None
+        self.workflow_id: str = ""
+        self.participant_identity: str = ""
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
@@ -1222,7 +1244,13 @@ class OutboundCaller(Agent):
                 "form_answers": answers,
                 "timestamp": datetime.utcnow().isoformat(),
             }
-            if self.room:
+            if self.recorder:
+                await self.recorder.publish_data_message(
+                    topic=TRANSCRIPT_TOPIC,
+                    payload=payload,
+                    lifecycle_event="form_answers_published",
+                )
+            elif self.room:
                 await _publish_transcript_to_room(self.room, payload)
             logger.info(
                 "Collected form_answers (total %d): added %d Q&A pairs",
@@ -1272,11 +1300,14 @@ class OutboundCaller(Agent):
         from browser_automation.ariba_form_fill import run_ariba_form_fill
 
         room = self.room
+        recorder = self.recorder
         if room:
             loop = asyncio.get_running_loop()
             def on_session_ready(session_id: str, _live_url: str | None) -> None:
                 loop.call_soon_threadsafe(
-                    lambda: asyncio.create_task(_publish_browserbase_session_to_room(room, session_id))
+                    lambda: asyncio.create_task(
+                        _publish_browserbase_session_to_room(room, session_id, recorder=recorder)
+                    )
                 )
         else:
             on_session_ready = None
@@ -1306,6 +1337,8 @@ async def entrypoint(ctx: JobContext):
     # Initialize trunk_id - will be read from metadata
     outbound_trunk_id = None
     
+    metadata: dict[str, Any] = {}
+
     if not ctx.job.metadata:
         logger.error("No metadata found in the job")
         user_details = {
@@ -1394,6 +1427,26 @@ async def entrypoint(ctx: JobContext):
         form=form,
     )
     agent.room = ctx.room  # for publishing transcript to LiveKit
+    agent.run_id = metadata.get("run_id") or metadata.get("runId") or None
+    agent.workflow_id = metadata.get("workflow_id") or ""
+    agent.participant_identity = participant_identity
+
+    recorder = CallActivityRecorder(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    recorder.configure(
+        run_id=agent.run_id,
+        workflow_id=agent.workflow_id,
+        room_id=room_id,
+        room=ctx.room,
+        participant_identity=participant_identity,
+    )
+    asyncio.create_task(
+        recorder.update_run(
+            room_id=room_id,
+            phone_number=phone_number,
+            participant_name=participant_identity,
+        )
+    )
+    agent.recorder = recorder
 
     # the following uses GPT-4o, Deepgram and Cartesia
     # VAD is required for responsive barge-in: it detects "user started speaking" from audio
@@ -1422,16 +1475,21 @@ async def entrypoint(ctx: JobContext):
         # min_endpointing_delay=0.5,   # Seconds to wait before considering user turn complete (default 0.5). Lower = agent responds sooner.
         # max_endpointing_delay=3.0,  # Max wait when turn detector thinks user might continue (default 3.0). Only used with turn_detection model.
     )
+    recorder.attach_to_session(session)
+    agent.transcript = recorder.transcript
 
     # Register cleanup handler for when session ends (handles unexpected disconnects)
     @session.on("close")
     def on_session_close():
         logger.info(f"Session closed for room {room_id}")
+        end_ts = datetime.utcnow().isoformat()
+        asyncio.create_task(recorder.record_lifecycle("session_closed", room_id=room_id))
+        asyncio.create_task(recorder.update_run(run_status="Completed", end_timestamp=end_ts))
         # Flush to Ariba, create Browserbase session, publish to room (so link is visible before disconnect), then subprocess form fill
         if not agent._form_answers_flushed and agent.collected_form_answers:
             agent._form_answers_flushed = True
             to_flush = list(agent.collected_form_answers)
-            asyncio.create_task(_flush_publish_browserbase_then_subprocess(to_flush, agent.room))
+            asyncio.create_task(_flush_publish_browserbase_then_subprocess(to_flush, agent.room, agent.recorder))
         if lead_id and not agent.call_outcome_written:
             logger.warning(f"Session ended without outcome recorded for lead {lead_id}. Recording as not_connected.")
             agent.call_outcome_written = True
@@ -1442,79 +1500,6 @@ async def entrypoint(ctx: JobContext):
                 room_id=room_id,
                 transcript=agent.transcript if agent.transcript else None,
             ))
-
-    # Capture user transcripts as they arrive (final only)
-    @session.on("user_input_transcribed")
-    def on_user_input_transcribed(event):
-        """Capture finalized user speech and publish to LiveKit room."""
-        try:
-            if event.is_final and event.transcript:
-                chunk = {
-                    "event": "transcript",
-                    "role": "user",
-                    "text": event.transcript,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "room_id": room_id,
-                }
-                agent.transcript.append({
-                    "role": "user",
-                    "text": event.transcript,
-                    "timestamp": chunk["timestamp"],
-                })
-                logger.info(f"Transcript [user]: {event.transcript[:100]}...")
-                if agent.room:
-                    asyncio.create_task(_publish_transcript_to_room(agent.room, chunk))
-        except Exception as e:
-            logger.warning(f"Failed to capture user transcript: {e}")
-
-    # Capture agent responses as conversation items are added
-    @session.on("conversation_item_added")
-    def on_conversation_item_added(event):
-        """Capture agent responses for transcript."""
-        try:
-            item = event.item
-            role = getattr(item, "role", "unknown")
-            
-            # Skip user items - we capture those via user_input_transcribed
-            if role == "user":
-                return
-            
-            # Use text_content property if available, otherwise build from content list
-            content = ""
-            if hasattr(item, "text_content") and item.text_content:
-                content = item.text_content
-            elif hasattr(item, "content"):
-                # Build content from content list
-                parts = []
-                for part in item.content:
-                    if isinstance(part, str):
-                        parts.append(part)
-                    elif hasattr(part, "transcript") and part.transcript:
-                        # AudioContent with transcript
-                        parts.append(part.transcript)
-                    elif hasattr(part, "text"):
-                        parts.append(part.text)
-                content = " ".join(parts)
-            
-            if content:  # Only add non-empty entries
-                ts = datetime.utcnow().isoformat()
-                agent.transcript.append({
-                    "role": role,
-                    "text": content,
-                    "timestamp": ts,
-                })
-                logger.info(f"Transcript [{role}]: {content[:100]}...")
-                chunk = {
-                    "event": "transcript",
-                    "role": role,
-                    "text": content,
-                    "timestamp": ts,
-                    "room_id": room_id,
-                }
-                if agent.room:
-                    asyncio.create_task(_publish_transcript_to_room(agent.room, chunk))
-        except Exception as e:
-            logger.warning(f"Failed to capture transcript item: {e}")
 
     # Start the session first before dialing so the agent does not miss anything the user says.
     # Pass participant_identity so RoomIO explicitly waits for and links to the SIP participant's
@@ -1538,6 +1523,13 @@ async def entrypoint(ctx: JobContext):
         return
     
     logger.info(f"Initiating SIP call to {phone_number} using trunk {outbound_trunk_id}")
+    asyncio.create_task(
+        recorder.record_lifecycle(
+            "call_initiated",
+            phone_number=phone_number,
+            trunk_id=outbound_trunk_id,
+        )
+    )
     try:
         await ctx.api.sip.create_sip_participant(
             api.CreateSIPParticipantRequest(
@@ -1558,6 +1550,12 @@ async def entrypoint(ctx: JobContext):
             allow_interruptions=False
         )
         logger.info(f"participant joined: {participant.identity}")
+        asyncio.create_task(
+            recorder.record_lifecycle(
+                "participant_joined",
+                participant_identity=participant.identity,
+            )
+        )
 
         agent.set_participant(participant)
         
@@ -1586,6 +1584,16 @@ async def entrypoint(ctx: JobContext):
         logger.error(
             f"error creating SIP participant: {e.message}, "
             f"SIP status: {sip_code} {sip_status}"
+        )
+        outcome = "busy" if sip_code == "486" else "no_answer" if sip_code == "480" else "error"
+        end_ts = datetime.utcnow().isoformat()
+        asyncio.create_task(recorder.record_sip_error(sip_status, sip_code=sip_code))
+        asyncio.create_task(
+            recorder.update_run(
+                outcome=outcome,
+                run_status="Failed",
+                end_timestamp=end_ts,
+            )
         )
         # 486 User Busy (or similar) can arrive after the callee already answered and joined.
         # If we already have a participant in the room, continue and speak so the agent is heard.
