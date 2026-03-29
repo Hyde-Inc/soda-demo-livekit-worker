@@ -1196,11 +1196,12 @@ class OutboundCaller(Agent):
             speech_handle = ctx.session.say("Dhanyavaad aapke time ke liye. Aapka din accha ho!", allow_interruptions=False)
             await speech_handle.wait_for_playout()
         
-        # Flush collected form answers to Ariba API and Browserbase form fill (once)
+        # Flush to Ariba, create Browserbase session (recorded to Supabase),
+        # then spawn subprocess for form fill (survives process exit).
         if not self._form_answers_flushed and self.collected_form_answers:
             self._form_answers_flushed = True
             to_flush = list(self.collected_form_answers)
-            await asyncio.to_thread(_flush_collected_form_answers_sync, to_flush)
+            await _flush_publish_browserbase_then_subprocess(to_flush, self.room, self.recorder)
         
         await self.hangup()
 
