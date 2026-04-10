@@ -16,7 +16,7 @@
           "allowedValues": null,
           "formName": "supplierName1",
           "required": true,
-          "user_answer": "Test"
+          "user_answer": "ABC Technologies"
         },
         {
           "number": "16.2",

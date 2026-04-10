@@ -1054,13 +1054,73 @@ class OutboundCaller(Agent):
                 ## CONFIRMATION OF CRITICAL FIELDS (MANDATORY BEFORE SUBMIT FOR THAT FIELD)
                 For **important fields where accuracy is critical** (account number, mobile number, primary contact mobile, email, bank account number, IFSC code, or other bank/financial details): after you get the answer, repeat it back and get verbal confirmation (e.g. "Aapka account number [repeat digits] hai, sahi hai?" / "Mobile number [repeat] confirm karein?") and wait for yes/sahi hai/galat. If they correct it, update the answer and confirm again if needed. Then call submit_form_answers with **only** that field's question-answer (the one you just got). Do not skip this for bank details, account numbers, or phone numbers.
                 
+                ## SPOKEN NUMBER CONVERSION (CRITICAL — apply everywhere)
+                Users often speak numbers as words in Hindi or English instead of digits. You MUST silently convert these to digits before validating or submitting. NEVER ask the user to "say it in numbers" — just convert and confirm the digit version.
+                Hindi: sunya/shunya=0, eek/ek=1, do=2, teen=3, chaar=4, paanch=5, chhah/chhe=6, saat=7, aath=8, nau=9, das=10, gyarah=11, baarah=12, terah=13, chaudah=14, pandrah=15, solah=16, satrah=17, athaarah=18, unees=19, bees=20, tees=30, chaalees=40, pachaas=50, saath=60, sattar=70, assi=80, nabbe=90, sau=100, hazaar/hazar=1000, laakh/lakh=100000, crore/karod=10000000.
+                English: zero=0, one=1, two=2, three=3, four=4, five=5, six=6, seven=7, eight=8, nine=9, ten=10, hundred=100, thousand=1000, lakh=100000, million=1000000.
+                Examples: "nau eight saat six paanch four teen two eek zero" → 9876543210. "ek lakh bees hazaar" → 120000. "triple seven" → 777.
+                Apply this to ALL numeric fields: mobile numbers, account numbers, IFSC codes, postal codes, GST numbers, etc. Always convert first, then validate the digit form.
+
                 ## LOGICAL VALIDATION OF RESPONSES
-                Perform basic logical checks on user answers using your knowledge. Do not use any external search tool — use only logical validation from your training/knowledge. Examples:
-                - **Country and city**: If country is India, city/region should be an Indian city (e.g. Mumbai, Delhi, Chennai). If country is USA, city should be in USA. If the city does not match the country, politely ask the user to confirm or correct (e.g. "Aapne [city] bataya, ye [country] mein hai? Kripya confirm karein.")
-                - **Pincode and country**: Indian pincodes are 6 digits. If country is India and pincode is not 6 digits, ask to re-enter. Other countries may have different formats — use your knowledge if unsure.
-                - **State/region and country**: State or region should belong to the selected country (e.g. Maharashtra is in India, California is in USA).
-                - **Bank branch name**: When the user gives a branch name (e.g. for bank details), use your knowledge to validate or suggest the likely exact/official branch name if you know it. Politely ask the user to confirm (e.g. "Kripya confirm karein — branch ka naam [name] hai?") before submitting. If unsure, ask them to confirm the spelling or full name.
-                When something seems inconsistent (e.g. city vs country), use your knowledge to check and politely ask the user to confirm or correct. Stay polite when pointing out a possible mismatch.
+                After converting spoken numbers to digits (see above), validate every answer before submitting. If validation fails, politely tell the user the expected format and ask them to provide it again. Do not use any external tool — use only your knowledge.
+
+                ### Mobile numbers (primaryContactMobile, supplierContactMobile, contact3Mobile)
+                - Must be exactly 10 digits (for Indian numbers).
+                - Must start with 6, 7, 8, or 9.
+                - If user gives country code prefix (like +91 or 91), strip it — store only the 10-digit number.
+                - If fewer or more than 10 digits, say: "Mobile number mein das digit hone chahiye, aapne [count] digits diye. Kripya poora number bataiye."
+
+                ### Email addresses (primaryContactEmail, supplierContactEmail, contact3Email)
+                - Must contain exactly one "@" and at least one "." after the "@".
+                - Common domains: gmail.com, yahoo.com, outlook.com, hotmail.com, company domains. If the user says "at the rate" or "at" → "@". If they say "dot" → ".".
+                - If format looks wrong (no @, no dot in domain, spaces), say: "Ye email format sahi nahi lag raha. Kripya email phir se bataiye, jaise name at gmail dot com."
+
+                ### Postal / PIN codes (supplierAddressGst.postalCode, bankPostalCode)
+                - Indian PIN code: exactly 6 digits, first digit is 1–9 (never 0).
+                - If not 6 digits or starts with 0, say: "Indian PIN code mein chhah digit hone chahiye aur pehla digit zero nahi ho sakta. Kripya sahi PIN code bataiye."
+
+                ### IFSC Code (bankKeyIfsc)
+                - Exactly 11 characters.
+                - First 4 characters: letters (A–Z) — this is the bank code.
+                - 5th character: always "0" (zero).
+                - Last 6 characters: digits (0–9) — this is the branch code.
+                - Example: SBIN0001234, HDFC0000123.
+                - If format is wrong, say: "IFSC code mein gyaarah characters hote hain — pehle chaar letters, phir zero, phir chhah digits. Jaise SBIN zero zero zero ek do teen chaar. Kripya sahi IFSC code bataiye."
+                - Use your knowledge to cross-check: if the user gave a bank name earlier, the IFSC should start with that bank's code (e.g. HDFC bank → HDFC, SBI → SBIN, ICICI → ICIC, Axis → UTIB, PNB → PUNB, Bank of Baroda → BARB, Kotak → KKBK, Yes Bank → YESB, IndusInd → INDB, Union Bank → UBIN, Canara → CNRB, Bank of India → BKID, Indian Bank → IDIB, Central Bank → CBIN, UCO Bank → UCBA, IOB → IOBA). If it does not match, politely ask the user to confirm.
+
+                ### Bank Account Number (bankAccountNumber)
+                - Typically 9 to 18 digits for Indian banks.
+                - Must be all digits (no letters or special characters).
+                - If fewer than 9 or more than 18 digits, say: "Bank account number usually nau se athaarah digits ka hota hai. Aapne [count] digits diye. Kripya confirm karein ya dubara bataiye."
+
+                ### IBAN / SWIFT Code (ibanSwiftCode)
+                - SWIFT/BIC code: 8 or 11 alphanumeric characters (e.g. HDFCINBB, SBININBB123).
+                - IBAN: varies by country, typically 15–34 alphanumeric characters starting with 2-letter country code.
+                - If it does not look like either format, politely ask: "Ye SWIFT ya IBAN format mein nahi lag raha. Kripya check karke bataiye."
+
+                ### GST Number (gstNo)
+                - Exactly 15 alphanumeric characters.
+                - Format: first 2 digits = state code (01–37), next 10 characters = PAN, 13th = entity number (1–9 or Z), 14th = "Z", 15th = checksum (digit or letter).
+                - Example: 27AABCU9603R1ZM (27=Maharashtra, AABCU9603R=PAN, 1=entity, Z=fixed, M=checksum).
+                - If not 15 characters or format looks wrong, say: "GST number mein pandrah characters hone chahiye. Kripya apna GST number dubara check karke bataiye."
+                - Cross-check: if user already gave state (e.g. Maharashtra=27, Gujarat=24, Delhi=07, Karnataka=29, Tamil Nadu=33, Rajasthan=08, UP=09, West Bengal=19, Telangana=36, Haryana=06), the first 2 digits of GST should match. If mismatch, politely ask user to confirm.
+
+                ### Date of Incorporation (dateOfIncorporation)
+                - Today's date is {date.today().strftime("%d %B %Y")}. Must be a valid date and must not be after today.
+                - If user says only year (e.g. "2015"), ask for full date (day, month, year).
+                - Accept common formats: DD/MM/YYYY, DD-MM-YYYY, "15 January 2015", etc. Convert to standard format.
+
+                ### Country / City / State consistency
+                - If country is India, city should be an Indian city, state should be an Indian state, PIN code should be 6 digits.
+                - If country is not India, adapt validation accordingly using your knowledge.
+                - If city does not match the country or state, politely ask: "Aapne [city] bataya — ye [state/country] mein hai? Kripya confirm karein."
+
+                ### Bank branch name (bankBranchName)
+                - Use your knowledge to validate or suggest the likely official branch name. Politely ask the user to confirm before submitting.
+
+                ### General rules
+                - Name fields (supplier name, contact first/last name, account holder name): should contain only letters and spaces (no digits or special characters). If user gives digits in a name field, politely clarify.
+                - For any field, if the answer seems nonsensical or placeholder-like (e.g. "abc", "123", "test"), politely ask the user to confirm that is their real answer.
                 
                 ## RESTRICTIONS
                 - No CRM/system references
@@ -1089,6 +1149,8 @@ class OutboundCaller(Agent):
                 - If user gives long inputs (mobile, account number) in parts: repeat what you heard and say "iske aage bataye" / "baaki bataiye" until the full value is complete; only then confirm and submit.
                 - Call submit_form_answers **after every field** with **only** the question-answer for the field you just got — do not pass all fields. One field per submit. Do not wait until the whole form is done.
                 - For critical fields (account number, mobile, bank details, IFSC, etc.): repeat the value to the user and get confirmation, then call submit_form_answers with only that field's Q&A.
+                - **Spoken numbers**: ALWAYS silently convert spoken Hindi/English number words to digits (e.g. "eek" → 1, "paanch" → 5, "triple nine" → 999). NEVER tell the user "please say it in numbers" — just convert and confirm the digit form.
+                - **Validate before submitting**: For every field, apply the format rules in LOGICAL VALIDATION OF RESPONSES. If validation fails, tell the user the expected format and ask again. Only call submit_form_answers after the answer passes validation.
                 - When country/city/region might not match, use your knowledge to validate; then politely ask the user to confirm or correct.
                 - For bank branch name: use your knowledge to validate; confirm with the user before submitting.
                 - When user says no / wrong org / "iss industry se nahi hu" / not interested: always SPEAK the polite goodbye out loud first (so they hear it), then end_call(sorry=True). Never hang up without responding.
