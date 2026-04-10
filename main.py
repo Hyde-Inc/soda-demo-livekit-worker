@@ -964,16 +964,9 @@ class OutboundCaller(Agent):
         questions_block_lines = []
         for q in all_questions:
             name = q.get("name", "")
-            name_lower = (name or "").lower()
-            # Do not ask PAN, Bank, or GST details — skip these questions entirely
-            if "pan" in name_lower or "bank" in name_lower or "gst" in name_lower or "gstin" in name_lower:
-                continue
             # Use externalSystemCorrelationId (formName/correlationId) as the number before the question
             num = q.get("formName") or q.get("correlationId") or q.get("externalSystemCorrelationId") or q.get("number", "")
-            if name == "Supplier Name 1":
-                user_answer = q.get("user_answer") if q.get("user_answer") else "Not answered yet"
-            else:   
-                user_answer = "Not answered yet"
+            user_answer = q.get("user_answer") if q.get("user_answer") else "Not answered yet"
             desc = q.get("description")
             allowed = q.get("allowedValues")
             req = " (required)" if q.get("required") else ""
