@@ -19,6 +19,12 @@ livekit-agents[aws,cartesia,deepgram,openai,sarvam,silero,turn-detector]~=1.3
 celery
 redis
 
+# ML backends (for transformers)
+torch
+tensorflow>=2.0
+jax
+flax
+
 # Utilities
 beautifulsoup4
 greenlet>=3.3.0
@@ -27,3 +33,6 @@ pwdlib[argon2]
 pyjwt
 python-dotenv~=1.0
 requests
+
+browserbase
+playwright

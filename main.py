@@ -3,7 +3,8 @@ from __future__ import annotations
 # load environment variables FIRST, before any LiveKit imports
 # This ensures LIVEKIT_URL is available when the CLI framework initializes
 from dotenv import load_dotenv
-load_dotenv(dotenv_path=".env.local")
+load_dotenv()  # .env
+load_dotenv(dotenv_path=".env.local")  # optional local overrides
 
 import asyncio
 import logging
@@ -52,6 +53,10 @@ _ariba_workspace_id: Optional[str] = None
 _ariba_qna_url_cached: Optional[str] = None
 _ariba_answers_url_cached: Optional[str] = None
 
+# Supabase: persist transcript/lifecycle/tool events to durable_agent_run_event
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+
 from livekit import rtc, api
 from livekit.agents import (
     AgentSession,
@@ -72,6 +77,7 @@ from livekit.plugins import (
 )
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 from pathlib import Path
+from call_activity import CallActivityRecorder
 
 def load_products_from_json() -> list[dict[str, Any]]:
     """Load products from tata_chemicals_products.json"""
@@ -526,10 +532,9 @@ def _submit_form_to_fill_api_sync(answers: list[dict[str, Any]]) -> tuple[bool, 
     body = json.dumps(payload).encode("utf-8")
 
     def _do_post() -> None:
-        logger.info(f"Skipping posting to ariba for now. Ariba answers URL: {fill_url}")
-        # req = urllib.request.Request(fill_url, data=body, headers=_ariba_headers(), method="POST")
-        # with urllib.request.urlopen(req, timeout=30) as resp:
-        #     resp.read()
+        req = urllib.request.Request(fill_url, data=body, headers=_ariba_headers(), method="POST")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp.read()
 
     try:
         _do_post()
@@ -545,6 +550,189 @@ def _submit_form_to_fill_api_sync(answers: list[dict[str, Any]]) -> tuple[bool, 
         return False, str(e)
     except Exception as e:
         return False, str(e)
+
+
+def _flush_collected_form_answers_sync(
+    collected: list[dict[str, Any]],
+    run_browserbase: bool = True,
+    run_browserbase_in_subprocess: bool = False,
+) -> tuple[bool, str]:
+    """
+    Flush collected form answers: dedupe by externalSystemCorrelationId (last wins),
+    then submit to Ariba form fill API and optionally run Browserbase form fill.
+
+    When run_browserbase_in_subprocess=True (e.g. on_session_close), Browserbase runs in a
+    detached subprocess so it can complete after the worker exits; the worker returns immediately.
+    When run_browserbase_in_subprocess=False (e.g. end_call), Browserbase runs in-process and we wait.
+    """
+    if not collected:
+        return True, "No form answers to submit"
+    # Dedupe by externalSystemCorrelationId — keep last occurrence
+    by_corr: dict[str, dict[str, Any]] = {}
+    for a in collected:
+        corr = (
+            a.get("externalSystemCorrelationId")
+            or a.get("correlationId")
+            or a.get("formName")
+            or ""
+        )
+        if corr:
+            by_corr[corr] = {
+                "externalSystemCorrelationId": corr,
+                "answer": a.get("answer", a.get("value", "")),
+            }
+    answers_for_ariba = list(by_corr.values())
+    if not answers_for_ariba:
+        return True, "No valid form answers to submit"
+    fill_success, fill_message = _submit_form_to_fill_api_sync(answers_for_ariba)
+    if run_browserbase:
+        form_answers_json = json.dumps(answers_for_ariba)
+        logger.info(
+            "Form answers JSON passed to Browserbase (%d items): %s",
+            len(answers_for_ariba),
+            form_answers_json,
+        )
+        if run_browserbase_in_subprocess:
+            try:
+                import subprocess
+                import sys
+                # logs_dir = Path(__file__).parent / "logs"
+                # logs_dir.mkdir(exist_ok=True)
+                # log_path = logs_dir / f"browserbase_ariba_{int(time.time())}_{os.getpid()}.log"
+                # log_file = open(log_path, "w", encoding="utf-8")
+                proc = subprocess.Popen(
+                    [sys.executable, "-m", "browser_automation.ariba_form_fill"],
+                    stdin=subprocess.PIPE,
+                    # stdout=log_file,
+                    # stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                )
+                proc.stdin.write(form_answers_json.encode("utf-8"))
+                proc.stdin.close()
+                logger.info(
+                    "Browserbase form fill started in background subprocess (pid=%s)",
+                    proc.pid,
+                )
+            except Exception as e:
+                logger.warning("Failed to start Browserbase subprocess: %s", e)
+        else:
+            try:
+                from browser_automation.ariba_form_fill import run_ariba_form_fill
+                bb_result = run_ariba_form_fill(form_answers_json=form_answers_json)
+                if bb_result.get("success"):
+                    logger.info(
+                        "Browserbase form fill completed: session_id=%s live_url=%s",
+                        bb_result.get("session_id"),
+                        bb_result.get("live_url"),
+                    )
+                else:
+                    logger.warning(
+                        "Browserbase form fill failed: %s",
+                        bb_result.get("error") or bb_result.get("message"),
+                    )
+            except Exception as e:
+                logger.warning("Browserbase form fill failed: %s", e)
+    else:
+        logger.info(
+            "Flush on session close: Ariba submit done; Browserbase skipped (use end_call or trigger_browserbase_session for browser fill)"
+        )
+    return fill_success, fill_message
+
+
+def _flush_ariba_and_create_browserbase_session_sync(
+    collected: list[dict[str, Any]],
+) -> tuple[bool, str, str | None, dict[str, Any] | None]:
+    """
+    Dedupe form answers, submit to Ariba API, then create a Browserbase session (no form fill).
+    Returns (fill_success, fill_message, form_answers_json_for_subprocess, session_result_dict or None).
+    Used on session close so we can publish the session to the room before spawning the form-fill subprocess.
+    """
+    if not collected:
+        return True, "No form answers to submit", None, None
+    by_corr: dict[str, dict[str, Any]] = {}
+    for a in collected:
+        corr = (
+            a.get("externalSystemCorrelationId")
+            or a.get("correlationId")
+            or a.get("formName")
+            or ""
+        )
+        if corr:
+            by_corr[corr] = {
+                "externalSystemCorrelationId": corr,
+                "answer": a.get("answer", a.get("value", "")),
+            }
+    answers_for_ariba = list(by_corr.values())
+    if not answers_for_ariba:
+        return True, "No valid form answers to submit", None, None
+    fill_success, fill_message = _submit_form_to_fill_api_sync(answers_for_ariba)
+    form_answers_json = json.dumps(answers_for_ariba)
+    logger.info(
+        "Form answers JSON for Browserbase (%d items): %s",
+        len(answers_for_ariba),
+        form_answers_json,
+    )
+    from browser_automation.ariba_form_fill import create_browserbase_session
+    session_result = create_browserbase_session()
+    return fill_success, fill_message, form_answers_json, session_result
+
+
+async def _flush_publish_browserbase_then_subprocess(
+    collected: list[dict[str, Any]],
+    room: Any,
+    recorder: CallActivityRecorder | None = None,
+) -> None:
+    """
+    On session close: flush to Ariba, create Browserbase session, publish session_id to room
+    (so participants get the link before disconnect), then spawn subprocess to do form fill in that session.
+    """
+    fill_success, fill_message, form_answers_json, session_result = await asyncio.to_thread(
+        _flush_ariba_and_create_browserbase_session_sync,
+        collected,
+    )
+    if session_result and session_result.get("success") and room:
+        session_id = session_result.get("session_id")
+        if session_id:
+            await _publish_browserbase_session_to_room(room, session_id, recorder=recorder)
+            logger.info(
+                "Published browserbase_session to room before subprocess (session_id=%s); starting form-fill subprocess",
+                session_id,
+            )
+    # Spawn subprocess: with existing session so it connects and fills; without session it would create its own
+    if form_answers_json and session_result and session_result.get("success"):
+        subprocess_payload = {
+            "form_answers_json": form_answers_json,
+            "session_id": session_result.get("session_id"),
+            "connect_url": session_result.get("connect_url"),
+        }
+        stdin_data = json.dumps(subprocess_payload).encode("utf-8")
+    elif form_answers_json:
+        # Fallback: no session created (e.g. API error); subprocess will create its own (room already closed)
+        stdin_data = form_answers_json.encode("utf-8")
+    else:
+        return
+    try:
+        import subprocess
+        import sys
+        # logs_dir = Path(__file__).parent / "logs"
+        # logs_dir.mkdir(exist_ok=True)
+        # log_path = logs_dir / f"browserbase_ariba_{int(time.time())}_{os.getpid()}.log"
+        # log_file = open(log_path, "w", encoding="utf-8")
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "browser_automation.ariba_form_fill"],
+            stdin=subprocess.PIPE,
+            # stdout=log_file,
+            # stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+        proc.stdin.write(stdin_data)
+        proc.stdin.close()
+        logger.info(
+            "Browserbase form fill started in background subprocess (pid=%s)",
+            proc.pid,
+        )
+    except Exception as e:
+        logger.warning("Failed to start Browserbase subprocess: %s", e)
 
 
 def load_form_for_prompt(default_json_path: str = "form_supplier_general_info.json") -> dict[str, Any]:
@@ -567,6 +755,8 @@ logger.setLevel(logging.INFO)
 
 # Topic for transcript data messages on LiveKit (subscribers can filter by this)
 TRANSCRIPT_TOPIC = "transcript"
+# Topic for browserbase session data (sessionId for viewing in room)
+BROWSERBASE_SESSION_TOPIC = "browserbase_session"
 
 
 async def _publish_transcript_to_room(room: Any, payload: dict) -> None:
@@ -581,6 +771,47 @@ async def _publish_transcript_to_room(room: Any, payload: dict) -> None:
         await local.publish_data(data, topic=TRANSCRIPT_TOPIC)
     except Exception as e:
         logger.warning(f"Failed to publish transcript to room: {e}")
+
+
+async def _publish_browserbase_session_to_room(
+    room: Any,
+    session_id: str,
+    recorder: CallActivityRecorder | None = None,
+) -> None:
+    """Publish browserbase session for viewing in the room (event + sessionId + timestamp)."""
+    if room is None:
+        return
+    try:
+        local = getattr(room, "local_participant", None)
+        if local is None:
+            return
+        payload = {
+            "event": "browserbase_session",
+            "sessionId": session_id,
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        }
+        logger.info(
+            "Publishing browserbase_session to room (topic=%s): %s",
+            BROWSERBASE_SESSION_TOPIC,
+            payload,
+        )
+        if recorder:
+            await recorder.publish_data_message(
+                topic=BROWSERBASE_SESSION_TOPIC,
+                payload=payload,
+                lifecycle_event="browserbase_session_published",
+            )
+        else:
+            data = json.dumps(payload).encode("utf-8")
+            await local.publish_data(data, topic=BROWSERBASE_SESSION_TOPIC)
+        logger.info(
+            "Published browserbase_session to room: event=%s sessionId=%s timestamp=%s",
+            payload["event"],
+            payload["sessionId"],
+            payload["timestamp"],
+        )
+    except Exception as e:
+        logger.warning("Failed to publish browserbase session to room: %s", e)
 
 
 async def update_lead_in_db(
@@ -733,16 +964,9 @@ class OutboundCaller(Agent):
         questions_block_lines = []
         for q in all_questions:
             name = q.get("name", "")
-            name_lower = (name or "").lower()
-            # Do not ask PAN, Bank, or GST details — skip these questions entirely
-            if "pan" in name_lower or "bank" in name_lower or "gst" in name_lower or "gstin" in name_lower:
-                continue
             # Use externalSystemCorrelationId (formName/correlationId) as the number before the question
             num = q.get("formName") or q.get("correlationId") or q.get("externalSystemCorrelationId") or q.get("number", "")
-            if name == "Supplier Name 1":
-                user_answer = q.get("user_answer") if q.get("user_answer") else "Not answered yet"
-            else:   
-                user_answer = "Not answered yet"
+            user_answer = q.get("user_answer") if q.get("user_answer") else "Not answered yet"
             desc = q.get("description")
             allowed = q.get("allowedValues")
             req = " (required)" if q.get("required") else ""
@@ -796,19 +1020,23 @@ class OutboundCaller(Agent):
                 Be **polite and calm in every situation**. Give every response in a very polite way. Use courteous language (e.g. kripya, dhanyavaad, maafi chahti hoon). Never sound rushed, impatient, or curt. If the user is confused, repeats, or corrects — stay calm and polite. This applies to greetings, questions, corrections, refusals, and goodbyes.
                 
                 
-                ## OPENING (say this first after confirming you are speaking with the right person)
-                "Namaste, main Tata Chemicals ki AI agent hoon. Mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu."
-                **Always ask:** "Kya main {supplier_name} ki taraf se kisi representative se baat kar rahi hoon?" / "Are you speaking from {supplier_name}?" — wait for yes/no before continuing.
-                "Mai ye dekh paa rahi hu ki kuch sawalon ke jawab fill ho chuke hai, kya aap bache hue sawalo ko complete karne mein meri madat kar sakte ho?"
-                If they say **yes/haaan**, then move to the questions below. Do not mention any section name when asking the questions.
-                If they say **no/nahi** or "I don't work here" / "main is org se nahi hu" / "nahi mai iss industry se nahi hu" / "we are not suppliers" / "wrong number" / "galat number": you MUST **speak** a polite response OUT LOUD first — e.g. "Kripya maafi chahti hoon, aapko disturb kiya. Aapka time dene ke liye dhanyavaad. Aapka din accha ho!" or "Sorry to disturb. Thank you for your time. Have a good day!" — so the user **hears** the goodbye. Only AFTER saying this out loud, call end_call(sorry=True). **Never** cut the call without speaking the polite goodbye first; the user must always hear your response before the call ends.
+                ## OPENING (MANDATORY — complete ALL steps in order before ANY form question)
+                **Step 1** — Greet: "Namaste, main Tata Chemicals ki AI agent hoon. Mai yaha aapke supplier onboarding form ko bharne mein sahayta karne ke liye hu."
+                **Step 2** — Confirm company (HARD GATE — you MUST get an explicit yes/no before doing ANYTHING else):
+                Ask: "Kya main {supplier_name} ki taraf se kisi representative se baat kar rahi hoon?"
+                Then STOP and WAIT for the user's response. Do NOT proceed to any form question, section listing, or any other topic until the user explicitly confirms "yes/haan/ji" or denies "no/nahi".
+                  - If **yes/haan/ji/sahi hai**: Company confirmed. Only now proceed to Step 3.
+                  - If **no/nahi** or "I don't work here" / "main is org se nahi hu" / "nahi mai iss industry se nahi hu" / "we are not suppliers" / "wrong number" / "galat number": you MUST **speak** a polite response OUT LOUD first — e.g. "Kripya maafi chahti hoon, aapko disturb kiya. Aapka time dene ke liye dhanyavaad. Aapka din accha ho!" — so the user **hears** the goodbye. Only AFTER saying this out loud, call end_call(sorry=True). **Never** cut the call without speaking the polite goodbye first.
+                  - If the user gives an **ambiguous/unclear** response (e.g. "what?", "kya?", "kaun?", doesn't answer the question), politely ask again: "Main bas confirm karna chahti hoon — kya aap {supplier_name} company se bol rahe hain?" Do NOT move forward until you get a clear yes or no.
+                **Step 3** — After company is confirmed, say: "Mai ye dekh paa rahi hu ki kuch sawalon ke jawab fill ho chuke hai, kya aap bache hue sawalo ko complete karne mein meri madat kar sakte ho?"
+                Then proceed to the CALL FLOW below.
                 
                 ## FORM QUESTIONS & ANSWERS
                 {questions_block}
                 
                 ## CALL FLOW
-                - Start with the opening line above.
-                - If they say yes/haaan, then move to below steps.
+                - Complete the OPENING steps above first (greet → confirm company → get explicit yes → then proceed).
+                - Only after the user confirms they are from {supplier_name}, move to below steps.
                 - Mention the section names which are left to be answered and ask them which one they want to answer first.
                 - If they choose a section, ask the questions in that section one by one.
                 - If they say kuch bhi/koi bhi chalega, begin with the first question in that section which is not answered yet.
@@ -823,19 +1051,79 @@ class OutboundCaller(Agent):
                 ## CONFIRMATION OF CRITICAL FIELDS (MANDATORY BEFORE SUBMIT FOR THAT FIELD)
                 For **important fields where accuracy is critical** (account number, mobile number, primary contact mobile, email, bank account number, IFSC code, or other bank/financial details): after you get the answer, repeat it back and get verbal confirmation (e.g. "Aapka account number [repeat digits] hai, sahi hai?" / "Mobile number [repeat] confirm karein?") and wait for yes/sahi hai/galat. If they correct it, update the answer and confirm again if needed. Then call submit_form_answers with **only** that field's question-answer (the one you just got). Do not skip this for bank details, account numbers, or phone numbers.
                 
+                ## SPOKEN NUMBER CONVERSION (CRITICAL — apply everywhere)
+                Users often speak numbers as words in Hindi or English instead of digits. You MUST silently convert these to digits before validating or submitting. NEVER ask the user to "say it in numbers" — just convert and confirm the digit version.
+                Hindi: sunya/shunya=0, eek/ek=1, do=2, teen=3, chaar=4, paanch=5, chhah/chhe=6, saat=7, aath=8, nau=9, das=10, gyarah=11, baarah=12, terah=13, chaudah=14, pandrah=15, solah=16, satrah=17, athaarah=18, unees=19, bees=20, tees=30, chaalees=40, pachaas=50, saath=60, sattar=70, assi=80, nabbe=90, sau=100, hazaar/hazar=1000, laakh/lakh=100000, crore/karod=10000000.
+                English: zero=0, one=1, two=2, three=3, four=4, five=5, six=6, seven=7, eight=8, nine=9, ten=10, hundred=100, thousand=1000, lakh=100000, million=1000000.
+                Examples: "nau eight saat six paanch four teen two eek zero" → 9876543210. "ek lakh bees hazaar" → 120000. "triple seven" → 777.
+                Apply this to ALL numeric fields: mobile numbers, account numbers, IFSC codes, postal codes, GST numbers, etc. Always convert first, then validate the digit form.
+
                 ## LOGICAL VALIDATION OF RESPONSES
-                Perform basic logical checks on user answers using your knowledge. Do not use any external search tool — use only logical validation from your training/knowledge. Examples:
-                - **Country and city**: If country is India, city/region should be an Indian city (e.g. Mumbai, Delhi, Chennai). If country is USA, city should be in USA. If the city does not match the country, politely ask the user to confirm or correct (e.g. "Aapne [city] bataya, ye [country] mein hai? Kripya confirm karein.")
-                - **Pincode and country**: Indian pincodes are 6 digits. If country is India and pincode is not 6 digits, ask to re-enter. Other countries may have different formats — use your knowledge if unsure.
-                - **State/region and country**: State or region should belong to the selected country (e.g. Maharashtra is in India, California is in USA).
-                - **Bank branch name**: When the user gives a branch name (e.g. for bank details), use your knowledge to validate or suggest the likely exact/official branch name if you know it. Politely ask the user to confirm (e.g. "Kripya confirm karein — branch ka naam [name] hai?") before submitting. If unsure, ask them to confirm the spelling or full name.
-                When something seems inconsistent (e.g. city vs country), use your knowledge to check and politely ask the user to confirm or correct. Stay polite when pointing out a possible mismatch.
+                After converting spoken numbers to digits (see above), validate every answer before submitting. If validation fails, politely tell the user the expected format and ask them to provide it again. Do not use any external tool — use only your knowledge.
+
+                ### Mobile numbers (primaryContactMobile, supplierContactMobile, contact3Mobile)
+                - Must be exactly 10 digits (for Indian numbers).
+                - Must start with 6, 7, 8, or 9.
+                - If user gives country code prefix (like +91 or 91), strip it — store only the 10-digit number.
+                - If fewer or more than 10 digits, say: "Mobile number mein das digit hone chahiye, aapne [count] digits diye. Kripya poora number bataiye."
+
+                ### Email addresses (primaryContactEmail, supplierContactEmail, contact3Email)
+                - Must contain exactly one "@" and at least one "." after the "@".
+                - Common domains: gmail.com, yahoo.com, outlook.com, hotmail.com, company domains. If the user says "at the rate" or "at" → "@". If they say "dot" → ".".
+                - If format looks wrong (no @, no dot in domain, spaces), say: "Ye email format sahi nahi lag raha. Kripya email phir se bataiye, jaise name at gmail dot com."
+
+                ### Postal / PIN codes (supplierAddressGst.postalCode, bankPostalCode)
+                - Indian PIN code: exactly 6 digits, first digit is 1–9 (never 0).
+                - If not 6 digits or starts with 0, say: "Indian PIN code mein chhah digit hone chahiye aur pehla digit zero nahi ho sakta. Kripya sahi PIN code bataiye."
+
+                ### IFSC Code (bankKeyIfsc)
+                - Exactly 11 characters.
+                - First 4 characters: letters (A–Z) — this is the bank code.
+                - 5th character: always "0" (zero).
+                - Last 6 characters: digits (0–9) — this is the branch code.
+                - Example: SBIN0001234, HDFC0000123.
+                - If format is wrong, say: "IFSC code mein gyaarah characters hote hain — pehle chaar letters, phir zero, phir chhah digits. Jaise SBIN zero zero zero ek do teen chaar. Kripya sahi IFSC code bataiye."
+                - Use your knowledge to cross-check: if the user gave a bank name earlier, the IFSC should start with that bank's code (e.g. HDFC bank → HDFC, SBI → SBIN, ICICI → ICIC, Axis → UTIB, PNB → PUNB, Bank of Baroda → BARB, Kotak → KKBK, Yes Bank → YESB, IndusInd → INDB, Union Bank → UBIN, Canara → CNRB, Bank of India → BKID, Indian Bank → IDIB, Central Bank → CBIN, UCO Bank → UCBA, IOB → IOBA). If it does not match, politely ask the user to confirm.
+
+                ### Bank Account Number (bankAccountNumber)
+                - Typically 9 to 18 digits for Indian banks.
+                - Must be all digits (no letters or special characters).
+                - If fewer than 9 or more than 18 digits, say: "Bank account number usually nau se athaarah digits ka hota hai. Aapne [count] digits diye. Kripya confirm karein ya dubara bataiye."
+
+                ### IBAN / SWIFT Code (ibanSwiftCode)
+                - SWIFT/BIC code: 8 or 11 alphanumeric characters (e.g. HDFCINBB, SBININBB123).
+                - IBAN: varies by country, typically 15–34 alphanumeric characters starting with 2-letter country code.
+                - If it does not look like either format, politely ask: "Ye SWIFT ya IBAN format mein nahi lag raha. Kripya check karke bataiye."
+
+                ### GST Number (gstNo)
+                - Exactly 15 alphanumeric characters.
+                - Format: first 2 digits = state code (01–37), next 10 characters = PAN, 13th = entity number (1–9 or Z), 14th = "Z", 15th = checksum (digit or letter).
+                - Example: 27AABCU9603R1ZM (27=Maharashtra, AABCU9603R=PAN, 1=entity, Z=fixed, M=checksum).
+                - If not 15 characters or format looks wrong, say: "GST number mein pandrah characters hone chahiye. Kripya apna GST number dubara check karke bataiye."
+                - Cross-check: if user already gave state (e.g. Maharashtra=27, Gujarat=24, Delhi=07, Karnataka=29, Tamil Nadu=33, Rajasthan=08, UP=09, West Bengal=19, Telangana=36, Haryana=06), the first 2 digits of GST should match. If mismatch, politely ask user to confirm.
+
+                ### Date of Incorporation (dateOfIncorporation)
+                - Today's date is {date.today().strftime("%d %B %Y")}. Must be a valid date and must not be after today.
+                - If user says only year (e.g. "2015"), ask for full date (day, month, year).
+                - Accept common formats: DD/MM/YYYY, DD-MM-YYYY, "15 January 2015", etc. Convert to standard format.
+
+                ### Country / City / State consistency
+                - If country is India, city should be an Indian city, state should be an Indian state, PIN code should be 6 digits.
+                - If country is not India, adapt validation accordingly using your knowledge.
+                - If city does not match the country or state, politely ask: "Aapne [city] bataya — ye [state/country] mein hai? Kripya confirm karein."
+
+                ### Bank branch name (bankBranchName)
+                - Use your knowledge to validate or suggest the likely official branch name. Politely ask the user to confirm before submitting.
+
+                ### General rules
+                - Name fields (supplier name, contact first/last name, account holder name): should contain only letters and spaces (no digits or special characters). If user gives digits in a name field, politely clarify.
+                - For any field, if the answer seems nonsensical or placeholder-like (e.g. "abc", "123", "test"), politely ask the user to confirm that is their real answer.
                 
                 ## RESTRICTIONS
                 - No CRM/system references
                 - One question at a time
                 - Do not collect phone/email beyond what is in the form (e.g. Primary Contact Mobile, Email are in the list)
-                - **Do NOT ask for or collect PAN details, Bank details, or GST/GSTIN details.** Skip those topics entirely. If the user volunteers such information, do not record or submit it.
+                - For sensitive fields (bank details, IFSC, account number, GST, PAN): collect them as part of the normal form flow, but always confirm with the user before submitting (see CONFIRMATION OF CRITICAL FIELDS).
                 
                 ## END CALL SEQUENCE
                 For **every** call end (including when user says no / wrong org / "iss industry se nahi hu" / not interested): you MUST speak a polite goodbye OUT LOUD first so the user hears it — e.g. "Kripya maafi chahti hoon. Dhanyavaad, aapka din accha ho!" — then call end_call. When ending because user said they are not from this industry / wrong org / not interested / wrong number, call end_call(sorry=True). For normal form-complete endings, call end_call(sorry=False).
@@ -849,6 +1137,7 @@ class OutboundCaller(Agent):
                 ## TOOL CALL BEHAVIOR
                 Do NOT say any waiting phrase before end_call or submit_form_answers - call them silently.
                 When calling submit_form_answers send the user answers in English, if they are not in English, convert them to English. Pass **only** the question-answer(s) for the field you just collected — do NOT include previously submitted fields. One field per call. Use this format for each object: fieldName (from the form question name), externalSystemCorrelationId (from the form, e.g. formName/correlationId in the question list), answer (from the conversation).
+                Use trigger_browserbase_session when the user asks to open the form in a browser, or to fill the form on the Ariba web page. You may pass form_answers_json (same format as submit_form_answers) to pre-fill fields. After calling, you can tell the user the session is open and share the live_url if they want to view it.
                 
                 ## KEY RULES
                 - Be **polite and calm in every situation** — respond in a very polite way at all times.
@@ -857,6 +1146,8 @@ class OutboundCaller(Agent):
                 - If user gives long inputs (mobile, account number) in parts: repeat what you heard and say "iske aage bataye" / "baaki bataiye" until the full value is complete; only then confirm and submit.
                 - Call submit_form_answers **after every field** with **only** the question-answer for the field you just got — do not pass all fields. One field per submit. Do not wait until the whole form is done.
                 - For critical fields (account number, mobile, bank details, IFSC, etc.): repeat the value to the user and get confirmation, then call submit_form_answers with only that field's Q&A.
+                - **Spoken numbers**: ALWAYS silently convert spoken Hindi/English number words to digits (e.g. "eek" → 1, "paanch" → 5, "triple nine" → 999). NEVER tell the user "please say it in numbers" — just convert and confirm the digit form.
+                - **Validate before submitting**: For every field, apply the format rules in LOGICAL VALIDATION OF RESPONSES. If validation fails, tell the user the expected format and ask again. Only call submit_form_answers after the answer passes validation.
                 - When country/city/region might not match, use your knowledge to validate; then politely ask the user to confirm or correct.
                 - For bank branch name: use your knowledge to validate; confirm with the user before submitting.
                 - When user says no / wrong org / "iss industry se nahi hu" / not interested: always SPEAK the polite goodbye out loud first (so they hear it), then end_call(sorry=True). Never hang up without responding.
@@ -876,8 +1167,16 @@ class OutboundCaller(Agent):
         
         # Transcript capture
         self.transcript: list[dict] = []
+        # Collected form answers during conversation; flushed to form fill on session end
+        self.collected_form_answers: list[dict[str, Any]] = []
+        self._form_answers_flushed: bool = False
         # Room reference for publishing transcript data messages (set in entrypoint)
         self.room: Any = None
+        self.recorder: CallActivityRecorder | None = None
+        # Supabase durable_agent_run_event: run_id/workflow_id set in entrypoint from metadata
+        self.run_id: str | None = None
+        self.workflow_id: str = ""
+        self.participant_identity: str = ""
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
@@ -956,14 +1255,21 @@ class OutboundCaller(Agent):
             speech_handle = ctx.session.say("Dhanyavaad aapke time ke liye. Aapka din accha ho!", allow_interruptions=False)
             await speech_handle.wait_for_playout()
         
+        # Flush to Ariba, create Browserbase session (recorded to Supabase),
+        # then spawn subprocess for form fill (survives process exit).
+        if not self._form_answers_flushed and self.collected_form_answers:
+            self._form_answers_flushed = True
+            to_flush = list(self.collected_form_answers)
+            await _flush_publish_browserbase_then_subprocess(to_flush, self.room, self.recorder)
+        
         await self.hangup()
 
     @function_tool()
     async def submit_form_answers(self, ctx: RunContext, form_answers_json: str) -> dict:
         """
-        MANDATORY: Call this at the end of the call (when form is complete or when ending) to submit
-        all collected question-answer pairs in JSON format. This publishes the form answers to the
-        room so subscribers can consume them.
+        MANDATORY: Call this after each field (or batch) to record the user's answer. Answers are
+        stored in a list and published to the room. When the call ends, all collected answers are
+        submitted to the form fill (Ariba API and optional Browserbase session) in one go.
 
         Args:
             form_answers_json: A JSON string: array of objects, each with:
@@ -980,19 +1286,10 @@ class OutboundCaller(Agent):
             answers = json.loads(form_answers_json)
             if not isinstance(answers, list):
                 answers = [answers]
-            payload = {
-                "event": "form_answers",
-                "role": "agent",
-                "form_answers": answers,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-            if self.room:
-                await _publish_transcript_to_room(self.room, payload)
-            logger.info("Published form_answers to room: %d Q&A pairs", len(answers))
-
-            # Submit to Ariba: send only externalSystemCorrelationId and answer (not fieldName)
-            answers_for_ariba = [
-                {
+            # Normalize and append to collected list (same field updated = last wins when we flush)
+            for a in answers:
+                self.collected_form_answers.append({
+                    "fieldName": a.get("fieldName", ""),
                     "externalSystemCorrelationId": (
                         a.get("externalSystemCorrelationId")
                         or a.get("correlationId")
@@ -1000,22 +1297,32 @@ class OutboundCaller(Agent):
                         or ""
                     ),
                     "answer": a.get("answer", a.get("value", "")),
-                }
-                for a in answers
-            ]
-            fill_success, fill_message = _submit_form_to_fill_api_sync(answers_for_ariba)
-
-            if not fill_success:
-                logger.warning("Form fill API failed: %s", fill_message)
-            else:
-                logger.info("Form fill API: %s", fill_message)
-
-            msg = f"Submitted {len(answers)} form answers to room"
-            if fill_success and "skipped" not in fill_message.lower():
-                msg += f"; {fill_message}"
-            elif not fill_success:
-                msg += f"; fill API error: {fill_message}"
-            return {"success": True, "message": msg, "count": len(answers)}
+                })
+            payload = {
+                "event": "form_answers",
+                "role": "agent",
+                "form_answers": answers,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            if self.recorder:
+                await self.recorder.publish_data_message(
+                    topic=TRANSCRIPT_TOPIC,
+                    payload=payload,
+                    lifecycle_event="form_answers_published",
+                )
+            elif self.room:
+                await _publish_transcript_to_room(self.room, payload)
+            logger.info(
+                "Collected form_answers (total %d): added %d Q&A pairs",
+                len(self.collected_form_answers),
+                len(answers),
+            )
+            return {
+                "success": True,
+                "message": f"Recorded {len(answers)} answer(s); total collected: {len(self.collected_form_answers)}. Will submit all when call ends.",
+                "count": len(answers),
+                "total_collected": len(self.collected_form_answers),
+            }
         except json.JSONDecodeError as e:
             logger.warning("submit_form_answers invalid JSON: %s", e)
             return {"success": False, "error": f"Invalid JSON: {e}"}
@@ -1033,7 +1340,51 @@ class OutboundCaller(Agent):
         """
         product = get_product_from_json(model_name)
         return product
-    
+
+    @function_tool()
+    async def trigger_browserbase_session(
+        self, ctx: RunContext, form_answers_json: str = ""
+    ) -> dict[str, Any]:
+        """Start a Browserbase browser session, open the Ariba login page, log in with configured credentials,
+        and optionally fill the form with the given answers. Use this when the user or workflow requires
+        filling the supplier form in the actual Ariba web UI (e.g. for verification or manual follow-up).
+        Session runs in region ap-southeast-1. Returns session_id and live_url for viewing the browser.
+
+        Args:
+            form_answers_json: Optional JSON string - array of objects with externalSystemCorrelationId and answer
+                (same format as submit_form_answers). If provided, the script will attempt to fill these in the form.
+
+        Returns:
+            JSON with success, session_id, live_url, message, and optional error.
+        """
+        from browser_automation.ariba_form_fill import run_ariba_form_fill
+
+        room = self.room
+        recorder = self.recorder
+        if room:
+            loop = asyncio.get_running_loop()
+            def on_session_ready(session_id: str, _live_url: str | None) -> None:
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(
+                        _publish_browserbase_session_to_room(room, session_id, recorder=recorder)
+                    )
+                )
+        else:
+            on_session_ready = None
+
+        result = await asyncio.to_thread(
+            run_ariba_form_fill,
+            form_answers_json=form_answers_json or None,
+            on_session_ready=on_session_ready,
+        )
+        logger.info(
+            "trigger_browserbase_session result: success=%s session_id=%s",
+            result.get("success"),
+            result.get("session_id"),
+        )
+        return result
+
+
 async def entrypoint(ctx: JobContext):
     logger.info(f"connecting to room {ctx.room.name}")
     await ctx.connect()
@@ -1046,6 +1397,8 @@ async def entrypoint(ctx: JobContext):
     # Initialize trunk_id - will be read from metadata
     outbound_trunk_id = None
     
+    metadata: dict[str, Any] = {}
+
     if not ctx.job.metadata:
         logger.error("No metadata found in the job")
         user_details = {
@@ -1134,6 +1487,26 @@ async def entrypoint(ctx: JobContext):
         form=form,
     )
     agent.room = ctx.room  # for publishing transcript to LiveKit
+    agent.run_id = metadata.get("run_id") or metadata.get("runId") or None
+    agent.workflow_id = metadata.get("workflow_id") or ""
+    agent.participant_identity = participant_identity
+
+    recorder = CallActivityRecorder(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    recorder.configure(
+        run_id=agent.run_id,
+        workflow_id=agent.workflow_id,
+        room_id=room_id,
+        room=ctx.room,
+        participant_identity=participant_identity,
+    )
+    asyncio.create_task(
+        recorder.update_run(
+            room_id=room_id,
+            phone_number=phone_number,
+            participant_name=participant_identity,
+        )
+    )
+    agent.recorder = recorder
 
     # the following uses GPT-4o, Deepgram and Cartesia
     # VAD is required for responsive barge-in: it detects "user started speaking" from audio
@@ -1162,11 +1535,21 @@ async def entrypoint(ctx: JobContext):
         # min_endpointing_delay=0.5,   # Seconds to wait before considering user turn complete (default 0.5). Lower = agent responds sooner.
         # max_endpointing_delay=3.0,  # Max wait when turn detector thinks user might continue (default 3.0). Only used with turn_detection model.
     )
+    recorder.attach_to_session(session)
+    agent.transcript = recorder.transcript
 
     # Register cleanup handler for when session ends (handles unexpected disconnects)
     @session.on("close")
     def on_session_close():
         logger.info(f"Session closed for room {room_id}")
+        end_ts = datetime.utcnow().isoformat()
+        asyncio.create_task(recorder.record_lifecycle("session_closed", room_id=room_id))
+        asyncio.create_task(recorder.update_run(run_status="Completed", end_timestamp=end_ts))
+        # Flush to Ariba, create Browserbase session, publish to room (so link is visible before disconnect), then subprocess form fill
+        if not agent._form_answers_flushed and agent.collected_form_answers:
+            agent._form_answers_flushed = True
+            to_flush = list(agent.collected_form_answers)
+            asyncio.create_task(_flush_publish_browserbase_then_subprocess(to_flush, agent.room, agent.recorder))
         if lead_id and not agent.call_outcome_written:
             logger.warning(f"Session ended without outcome recorded for lead {lead_id}. Recording as not_connected.")
             agent.call_outcome_written = True
@@ -1177,79 +1560,6 @@ async def entrypoint(ctx: JobContext):
                 room_id=room_id,
                 transcript=agent.transcript if agent.transcript else None,
             ))
-
-    # Capture user transcripts as they arrive (final only)
-    @session.on("user_input_transcribed")
-    def on_user_input_transcribed(event):
-        """Capture finalized user speech and publish to LiveKit room."""
-        try:
-            if event.is_final and event.transcript:
-                chunk = {
-                    "event": "transcript",
-                    "role": "user",
-                    "text": event.transcript,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "room_id": room_id,
-                }
-                agent.transcript.append({
-                    "role": "user",
-                    "text": event.transcript,
-                    "timestamp": chunk["timestamp"],
-                })
-                logger.info(f"Transcript [user]: {event.transcript[:100]}...")
-                if agent.room:
-                    asyncio.create_task(_publish_transcript_to_room(agent.room, chunk))
-        except Exception as e:
-            logger.warning(f"Failed to capture user transcript: {e}")
-
-    # Capture agent responses as conversation items are added
-    @session.on("conversation_item_added")
-    def on_conversation_item_added(event):
-        """Capture agent responses for transcript."""
-        try:
-            item = event.item
-            role = getattr(item, "role", "unknown")
-            
-            # Skip user items - we capture those via user_input_transcribed
-            if role == "user":
-                return
-            
-            # Use text_content property if available, otherwise build from content list
-            content = ""
-            if hasattr(item, "text_content") and item.text_content:
-                content = item.text_content
-            elif hasattr(item, "content"):
-                # Build content from content list
-                parts = []
-                for part in item.content:
-                    if isinstance(part, str):
-                        parts.append(part)
-                    elif hasattr(part, "transcript") and part.transcript:
-                        # AudioContent with transcript
-                        parts.append(part.transcript)
-                    elif hasattr(part, "text"):
-                        parts.append(part.text)
-                content = " ".join(parts)
-            
-            if content:  # Only add non-empty entries
-                ts = datetime.utcnow().isoformat()
-                agent.transcript.append({
-                    "role": role,
-                    "text": content,
-                    "timestamp": ts,
-                })
-                logger.info(f"Transcript [{role}]: {content[:100]}...")
-                chunk = {
-                    "event": "transcript",
-                    "role": role,
-                    "text": content,
-                    "timestamp": ts,
-                    "room_id": room_id,
-                }
-                if agent.room:
-                    asyncio.create_task(_publish_transcript_to_room(agent.room, chunk))
-        except Exception as e:
-            logger.warning(f"Failed to capture transcript item: {e}")
 
     # Start the session first before dialing so the agent does not miss anything the user says.
     # Pass participant_identity so RoomIO explicitly waits for and links to the SIP participant's
@@ -1273,6 +1583,13 @@ async def entrypoint(ctx: JobContext):
         return
     
     logger.info(f"Initiating SIP call to {phone_number} using trunk {outbound_trunk_id}")
+    asyncio.create_task(
+        recorder.record_lifecycle(
+            "call_initiated",
+            phone_number=phone_number,
+            trunk_id=outbound_trunk_id,
+        )
+    )
     try:
         await ctx.api.sip.create_sip_participant(
             api.CreateSIPParticipantRequest(
@@ -1293,6 +1610,12 @@ async def entrypoint(ctx: JobContext):
             allow_interruptions=False
         )
         logger.info(f"participant joined: {participant.identity}")
+        asyncio.create_task(
+            recorder.record_lifecycle(
+                "participant_joined",
+                participant_identity=participant.identity,
+            )
+        )
 
         agent.set_participant(participant)
         
@@ -1321,6 +1644,16 @@ async def entrypoint(ctx: JobContext):
         logger.error(
             f"error creating SIP participant: {e.message}, "
             f"SIP status: {sip_code} {sip_status}"
+        )
+        outcome = "busy" if sip_code == "486" else "no_answer" if sip_code == "480" else "error"
+        end_ts = datetime.utcnow().isoformat()
+        asyncio.create_task(recorder.record_sip_error(sip_status, sip_code=sip_code))
+        asyncio.create_task(
+            recorder.update_run(
+                outcome=outcome,
+                run_status="Failed",
+                end_timestamp=end_ts,
+            )
         )
         # 486 User Busy (or similar) can arrive after the callee already answered and joined.
         # If we already have a participant in the room, continue and speak so the agent is heard.
@@ -1369,9 +1702,13 @@ async def entrypoint(ctx: JobContext):
 
 
 if __name__ == "__main__":
+    _agent_name = (
+        os.getenv("LIVEKIT_AGENT_NAME", "tatachemicals-voice-agent").strip()
+        or "tatachemicals-voice-agent"
+    )
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="tatachem-v2v-agent",
+            agent_name=_agent_name,
         )
     )
