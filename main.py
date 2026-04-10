@@ -1130,7 +1130,7 @@ class OutboundCaller(Agent):
                 - No CRM/system references
                 - One question at a time
                 - Do not collect phone/email beyond what is in the form (e.g. Primary Contact Mobile, Email are in the list)
-                - **Do NOT ask for or collect PAN details, Bank details, or GST/GSTIN details.** Skip those topics entirely. If the user volunteers such information, do not record or submit it.
+                - For sensitive fields (bank details, IFSC, account number, GST, PAN): collect them as part of the normal form flow, but always confirm with the user before submitting (see CONFIRMATION OF CRITICAL FIELDS).
                 
                 ## END CALL SEQUENCE
                 For **every** call end (including when user says no / wrong org / "iss industry se nahi hu" / not interested): you MUST speak a polite goodbye OUT LOUD first so the user hears it — e.g. "Kripya maafi chahti hoon. Dhanyavaad, aapka din accha ho!" — then call end_call. When ending because user said they are not from this industry / wrong org / not interested / wrong number, call end_call(sorry=True). For normal form-complete endings, call end_call(sorry=False).
